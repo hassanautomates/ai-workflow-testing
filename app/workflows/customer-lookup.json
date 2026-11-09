@@ -1,0 +1,74 @@
+{
+  "id": "customer-lookup",
+  "name": "Customer lookup",
+  "published": true,
+  "steps": [
+    {
+      "id": "lookup",
+      "block": "form",
+      "title": "Find a customer",
+      "submitLabel": "Look up",
+      "fields": [
+        { "name": "customerId", "label": "Customer ID", "type": "text", "sample": "C-1001" }
+      ]
+    },
+    {
+      "id": "load-customer",
+      "block": "fetch",
+      "path": "/api/customers/{{customerId}}",
+      "into": "customer"
+    },
+    {
+      "id": "full-name",
+      "block": "string",
+      "op": "template",
+      "template": "{{customer.firstName}} {{customer.lastName}}",
+      "into": "fullName"
+    },
+    {
+      "id": "normalise-email",
+      "block": "string",
+      "op": "lower",
+      "args": [{ "ref": "customer.email" }],
+      "into": "email"
+    },
+    {
+      "id": "location",
+      "block": "string",
+      "op": "concat",
+      "args": [{ "ref": "customer.address.city" }, ", ", { "ref": "customer.address.country" }],
+      "into": "location"
+    },
+    {
+      "id": "account",
+      "block": "object",
+      "op": "pick",
+      "from": "customer",
+      "fields": ["tier", "since"],
+      "into": "account"
+    },
+    {
+      "id": "profile",
+      "block": "details",
+      "title": "Customer",
+      "fields": [
+        { "label": "Name", "path": "fullName" },
+        { "label": "Email", "path": "email" },
+        { "label": "Location", "path": "location" },
+        { "label": "Tier", "path": "account.tier" },
+        { "label": "Customer since", "path": "account.since" }
+      ]
+    },
+    {
+      "id": "orders",
+      "block": "table",
+      "title": "Orders",
+      "rows": "customer.orders",
+      "columns": [
+        { "label": "Order", "key": "id" },
+        { "label": "Item", "key": "item" },
+        { "label": "Amount", "key": "amount" }
+      ]
+    }
+  ]
+}

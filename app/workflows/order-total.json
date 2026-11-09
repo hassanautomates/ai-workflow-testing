@@ -1,0 +1,85 @@
+{
+  "id": "order-total",
+  "name": "Order total with tax",
+  "published": true,
+  "steps": [
+    {
+      "id": "order",
+      "block": "form",
+      "title": "New order",
+      "submitLabel": "Calculate",
+      "fields": [
+        { "name": "quantity", "label": "Quantity", "type": "number", "sample": "3" },
+        { "name": "unitPrice", "label": "Unit price", "type": "number", "sample": "19.99" }
+      ]
+    },
+    {
+      "id": "subtotal",
+      "block": "math",
+      "op": "mul",
+      "args": [{ "ref": "quantity" }, { "ref": "unitPrice" }],
+      "decimals": 2,
+      "into": "subtotal"
+    },
+    {
+      "id": "check-discount",
+      "block": "condition",
+      "if": { "left": { "ref": "subtotal" }, "cmp": "gte", "right": 100 },
+      "then": "discount",
+      "else": "no-discount"
+    },
+    {
+      "id": "discount",
+      "block": "math",
+      "op": "mul",
+      "args": [{ "ref": "subtotal" }, 0.1],
+      "decimals": 2,
+      "into": "discount",
+      "next": "taxable"
+    },
+    { "id": "no-discount", "block": "object", "op": "set", "value": 0, "into": "discount" },
+    {
+      "id": "taxable",
+      "block": "math",
+      "op": "sub",
+      "args": [{ "ref": "subtotal" }, { "ref": "discount" }],
+      "decimals": 2,
+      "into": "taxable"
+    },
+    {
+      "id": "tax",
+      "block": "math",
+      "op": "mul",
+      "args": [{ "ref": "taxable" }, 0.0825],
+      "decimals": 2,
+      "into": "tax"
+    },
+    {
+      "id": "total",
+      "block": "math",
+      "op": "add",
+      "args": [{ "ref": "taxable" }, { "ref": "tax" }],
+      "decimals": 2,
+      "into": "total"
+    },
+    {
+      "id": "summary",
+      "block": "string",
+      "op": "template",
+      "template": "{{quantity}} × {{unitPrice}}, total {{total}}",
+      "into": "summary"
+    },
+    {
+      "id": "receipt",
+      "block": "details",
+      "title": "Order total",
+      "fields": [
+        { "label": "Subtotal", "path": "subtotal" },
+        { "label": "Discount", "path": "discount" },
+        { "label": "Tax", "path": "tax" },
+        { "label": "Total", "path": "total" },
+        { "label": "Summary", "path": "summary" }
+      ]
+    }
+  ]
+}
