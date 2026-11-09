@@ -1,5 +1,5 @@
 import { test } from '@playwright/test';
-import { discoverWorkflows, httpFetch } from '../../harness/discover.ts';
+import { discoverWorkflows, httpFetch, readAiSeed } from '../../harness/discover.ts';
 import { driveCase } from '../../harness/driver.ts';
 import { baseURL } from './base-url.ts';
 
@@ -9,6 +9,18 @@ import { baseURL } from './base-url.ts';
 // nothing, discoverWorkflows throws and the whole run fails: it can never
 // pass by testing nothing.
 const workflows = await discoverWorkflows(baseURL);
+
+// The seed the app's simulated model is using. Every test prints it and
+// attaches it to the report; rerun with AI_SEED=<seed> to reproduce a failure.
+const aiSeed = await readAiSeed(baseURL);
+
+// Playwright requires a destructuring pattern here even when no fixtures are used.
+// eslint-disable-next-line no-empty-pattern
+test.beforeEach(async ({}, testInfo) => {
+  testInfo.annotations.push({ type: 'AI_SEED', description: aiSeed });
+  await testInfo.attach('AI_SEED', { body: aiSeed, contentType: 'text/plain' });
+  console.log(`AI_SEED=${aiSeed} (reproduce with: AI_SEED=${aiSeed} npm run test:e2e)`);
+});
 
 for (const workflow of workflows) {
   test.describe(workflow.id, () => {
