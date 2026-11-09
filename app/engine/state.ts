@@ -4,11 +4,30 @@ import type { Operand } from './schema.ts';
 export type State = Readonly<Record<string, unknown>>;
 
 /**
+ * Why a run ended in an error. Rendered as data-error-code on the error page,
+ * so tests can check the cause without depending on message wording.
+ */
+export type EngineErrorCode =
+  | 'missing-value'
+  | 'wrong-type'
+  | 'bad-args'
+  | 'divide-by-zero'
+  | 'fetch-failed'
+  | 'ai-contract'
+  | 'step-loop';
+
+/**
  * A problem caused by the workflow or its data (missing value, wrong type,
  * failed fetch). It ends the run with an error page rather than a 500.
  */
 export class EngineError extends Error {
   override name = 'EngineError';
+  constructor(
+    readonly code: EngineErrorCode,
+    message: string,
+  ) {
+    super(message);
+  }
 }
 
 export function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -24,19 +43,31 @@ export function getPath(state: State, path: string): unknown {
     } else if (isPlainObject(current) && Object.hasOwn(current, key)) {
       current = current[key];
     } else {
-      throw new EngineError(`state has no value at "${path}"`);
+      throw new EngineError('missing-value', `state has no value at "${path}"`);
     }
   }
   return current;
 }
 
-/** Returns a copy of `state` with `path` set. Missing parent objects are created. */
+/**
+ * Returns a copy of `container` with `path` set. Missing parent objects are
+ * created; a numeric segment inside an existing array writes that index.
+ */
+function setIn(container: unknown, keys: readonly string[], value: unknown): unknown {
+  const [head, ...rest] = keys;
+  if (head === undefined) return value;
+  if (Array.isArray(container) && /^\d+$/.test(head) && Number(head) < container.length) {
+    const copy: unknown[] = [...(container as unknown[])];
+    copy[Number(head)] = setIn(copy[Number(head)], rest, value);
+    return copy;
+  }
+  const object = isPlainObject(container) ? container : {};
+  return { ...object, [head]: setIn(object[head], rest, value) };
+}
+
 export function setPath(state: State, path: string, value: unknown): State {
-  const [head, ...rest] = path.split('.');
-  if (head === undefined) throw new EngineError('empty state path');
-  if (rest.length === 0) return { ...state, [head]: value };
-  const child = state[head];
-  return { ...state, [head]: setPath(isPlainObject(child) ? child : {}, rest.join('.'), value) };
+  if (path === '') throw new EngineError('bad-args', 'empty state path');
+  return setIn(state, path.split('.'), value) as State;
 }
 
 export function resolveOperand(state: State, operand: Operand): unknown {

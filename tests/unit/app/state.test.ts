@@ -34,6 +34,14 @@ describe('setPath', () => {
   it('creates missing parents', () => {
     expect(setPath({}, 'x.y.z', 'v')).toEqual({ x: { y: { z: 'v' } } });
   });
+
+  it('writes into an existing array by index without touching the original', () => {
+    const original = { rows: [{ id: 1 }, { id: 2 }] };
+    expect(setPath(original, 'rows.1.label', 'b')).toEqual({
+      rows: [{ id: 1 }, { id: 2, label: 'b' }],
+    });
+    expect(original.rows[1]).toEqual({ id: 2 });
+  });
 });
 
 describe('roundTo', () => {

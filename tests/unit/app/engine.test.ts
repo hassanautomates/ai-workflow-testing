@@ -5,7 +5,10 @@ import { type Workflow, workflowSchema } from '../../../app/engine/schema.ts';
 import { fetchFromMockApi } from '../../../app/mock-api/index.ts';
 import { loadWorkflows } from '../../../app/workflows/load.ts';
 
-const engine = createEngine({ handlers: createBlockHandlers(), fetchJson: fetchFromMockApi });
+const engine = createEngine({
+  handlers: createBlockHandlers({ aiSeed: 'unit-test' }),
+  fetchJson: fetchFromMockApi,
+});
 const workflows = loadWorkflows();
 
 function workflow(id: string): Workflow {
@@ -96,8 +99,19 @@ describe('customer-lookup', () => {
 
   it('ends the run with an error for an unknown customer', async () => {
     const run = await drive(workflow('customer-lookup'), { lookup: { customerId: 'C-9999' } });
-    expect(run).toMatchObject({ status: 'error', currentStepId: null });
+    expect(run).toMatchObject({ status: 'error', currentStepId: null, errorCode: 'fetch-failed' });
     expect(run.error).toContain('404');
+  });
+
+  it('counts screens: 1 for the first, +1 each time the run moves on', async () => {
+    const wf = workflow('customer-lookup');
+    const first = await engine.start(wf, 'r');
+    expect(first.screenSeq).toBe(1);
+    const second = await engine.submit(wf, first, 'lookup', { customerId: 'C-1002' });
+    expect(second.run.screenSeq).toBe(2);
+    // A rejected submit stays on the same screen.
+    const invalid = await engine.submit(wf, first, 'lookup', { customerId: '' });
+    expect(invalid).toMatchObject({ kind: 'invalid', run: { screenSeq: 1 } });
   });
 
   it('handles a customer with no orders', async () => {

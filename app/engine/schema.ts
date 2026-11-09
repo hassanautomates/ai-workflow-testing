@@ -85,10 +85,66 @@ const fetchStep = z.strictObject({
   into: statePath,
 });
 
+/**
+ * One field of a model's output contract. The simulated model always stays
+ * inside it, the engine rejects output that doesn't, and the harness reads
+ * these same rules to check what it can't predict exactly.
+ */
+const required = z.boolean().default(true);
+const outputRule = z.discriminatedUnion('type', [
+  z.strictObject({
+    type: z.literal('string'),
+    required,
+    minLength: z.number().int().min(0).optional(),
+    maxLength: z.number().int().min(1).optional(),
+    allowed: z.array(z.string()).min(1).optional(),
+  }),
+  z.strictObject({
+    type: z.literal('number'),
+    required,
+    min: z.number().optional(),
+    max: z.number().optional(),
+    /** At most this many decimal places. */
+    decimals: z.number().int().min(0).max(10).optional(),
+    allowed: z.array(z.number()).min(1).optional(),
+  }),
+  z.strictObject({ type: z.literal('boolean'), required }),
+]);
+export type OutputRule = z.infer<typeof outputRule>;
+
+const aiStep = z.strictObject({
+  ...stepBase,
+  block: z.literal('ai'),
+  /** What the model is asked to do. Documentation, and part of the simulation seed. */
+  prompt: z.string().min(1),
+  /** The text the model reads. */
+  input: operand,
+  /** Field name → rule. The model returns an object with these fields. */
+  output: z.record(z.string().regex(/^[A-Za-z_]\w*$/), outputRule),
+  into: statePath,
+});
+
+const idStep = z.strictObject({
+  ...stepBase,
+  block: z.literal('id'),
+  prefix: z
+    .string()
+    .regex(/^[A-Z0-9-]*$/)
+    .default(''),
+  /** Random characters after the prefix. */
+  length: z.number().int().min(4).max(32),
+  alphabet: z
+    .string()
+    .regex(/^[A-Z0-9]{2,}$/)
+    .default('23456789ABCDEFGHJKMNPQRSTVWXYZ'),
+  into: statePath,
+});
+
 const formField = z.strictObject({
   name: statePath,
   label: z.string().min(1),
-  type: z.enum(['text', 'number']),
+  /** textarea is multi-line text; it is stored exactly like text. */
+  type: z.enum(['text', 'textarea', 'number']),
   required: z.boolean().default(true),
 });
 
@@ -124,6 +180,8 @@ export const headlessStepSchema = z.union([
   objectStep,
   conditionStep,
   fetchStep,
+  aiStep,
+  idStep,
 ]);
 export const uiStepSchema = z.discriminatedUnion('block', [formStep, detailsStep, tableStep]);
 const stepSchema = z.union([headlessStepSchema, uiStepSchema]);
@@ -200,6 +258,29 @@ export const workflowSchema = z
           ctx.addIssue({ code: 'custom', message: `step "${step.id}": op ${step.op} needs args` });
         }
       }
+      if (step.block === 'ai') {
+        const rules = Object.entries(step.output);
+        if (!rules.some(([, rule]) => rule.required)) {
+          ctx.addIssue({ code: 'custom', message: `ai step "${step.id}" needs a required field` });
+        }
+        for (const [field, rule] of rules) {
+          const bad =
+            (rule.type === 'number' &&
+              rule.min !== undefined &&
+              rule.max !== undefined &&
+              rule.min > rule.max) ||
+            (rule.type === 'string' &&
+              rule.minLength !== undefined &&
+              rule.maxLength !== undefined &&
+              rule.minLength > rule.maxLength);
+          if (bad) {
+            ctx.addIssue({
+              code: 'custom',
+              message: `ai step "${step.id}": output "${field}" has bounds no value can meet`,
+            });
+          }
+        }
+      }
     }
     if (!workflow.steps.some((step) => uiBlocks.has(step.block))) {
       ctx.addIssue({ code: 'custom', message: 'a workflow needs at least one UI step' });
@@ -211,6 +292,8 @@ export type Step = Workflow['steps'][number];
 export type HeadlessStep = z.infer<typeof headlessStepSchema>;
 export type UiStep = z.infer<typeof uiStepSchema>;
 export type FormStep = z.infer<typeof formStep>;
+export type AiStep = z.infer<typeof aiStep>;
+export type IdStep = z.infer<typeof idStep>;
 
 export function isUiStep(step: Step): step is UiStep {
   return uiBlocks.has(step.block);

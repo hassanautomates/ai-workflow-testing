@@ -1,3 +1,6 @@
+import { randomInt } from 'node:crypto';
+import { contractViolations } from '../ai/contract.ts';
+import { simulateModel } from '../ai/simulate.ts';
 import type { HeadlessStep } from './schema.ts';
 import {
   EngineError,
@@ -36,28 +39,39 @@ export type BlockHandlers = { readonly [B in BlockName]: Handler<B> };
 
 function requireNumber(stepId: string, value: unknown): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) {
-    throw new EngineError(`step "${stepId}" expected a number, got ${JSON.stringify(value)}`);
+    throw new EngineError(
+      'wrong-type',
+      `step "${stepId}" expected a number, got ${JSON.stringify(value)}`,
+    );
   }
   return value;
 }
 
 function requireString(stepId: string, value: unknown): string {
   if (typeof value !== 'string') {
-    throw new EngineError(`step "${stepId}" expected a string, got ${JSON.stringify(value)}`);
+    throw new EngineError(
+      'wrong-type',
+      `step "${stepId}" expected a string, got ${JSON.stringify(value)}`,
+    );
   }
   return value;
 }
 
 function requireObject(stepId: string, value: unknown): Record<string, unknown> {
   if (!isPlainObject(value)) {
-    throw new EngineError(`step "${stepId}" expected an object, got ${JSON.stringify(value)}`);
+    throw new EngineError(
+      'wrong-type',
+      `step "${stepId}" expected an object, got ${JSON.stringify(value)}`,
+    );
   }
   return value;
 }
 
 function onlyArg(step: StepOf<'string'>, state: State): string {
   const arg = step.args?.length === 1 ? step.args[0] : undefined;
-  if (arg === undefined) throw new EngineError(`step "${step.id}": op ${step.op} takes one arg`);
+  if (arg === undefined) {
+    throw new EngineError('bad-args', `step "${step.id}": op ${step.op} takes one arg`);
+  }
   return requireString(step.id, resolveOperand(state, arg));
 }
 
@@ -65,7 +79,7 @@ const math: Handler<'math'> = (step, { state }) => {
   const [first, ...rest] = step.args.map((arg) =>
     requireNumber(step.id, resolveOperand(state, arg)),
   );
-  if (first === undefined) throw new EngineError(`step "${step.id}" has no args`);
+  if (first === undefined) throw new EngineError('bad-args', `step "${step.id}" has no args`);
   const result = rest.reduce((acc, value) => {
     switch (step.op) {
       case 'add':
@@ -75,7 +89,9 @@ const math: Handler<'math'> = (step, { state }) => {
       case 'mul':
         return acc * value;
       case 'div':
-        if (value === 0) throw new EngineError(`step "${step.id}" divides by zero`);
+        if (value === 0) {
+          throw new EngineError('divide-by-zero', `step "${step.id}" divides by zero`);
+        }
         return acc / value;
     }
   }, first);
@@ -161,6 +177,39 @@ const fetchBlock: Handler<'fetch'> = async (step, { state, fetchJson }) => {
   return { state: setPath(state, step.into, await fetchJson(path)) };
 };
 
-export function createBlockHandlers(): BlockHandlers {
-  return { math, string, object, condition, fetch: fetchBlock };
+/** Model output is untrusted: anything outside the declared contract ends the run. */
+function aiBlock(seed: string): Handler<'ai'> {
+  return (step, { state }) => {
+    const input = requireString(step.id, resolveOperand(state, step.input));
+    const output = simulateModel({
+      seed,
+      stepId: step.id,
+      prompt: step.prompt,
+      input,
+      output: step.output,
+    });
+    const problems = contractViolations(output, step.output);
+    if (problems.length > 0) {
+      throw new EngineError(
+        'ai-contract',
+        `step "${step.id}": model output broke its contract: ${problems.join('; ')}`,
+      );
+    }
+    return Promise.resolve({ state: setPath(state, step.into, output) });
+  };
+}
+
+const idBlock: Handler<'id'> = (step, { state }) => {
+  let id = step.prefix;
+  for (let i = 0; i < step.length; i++) id += step.alphabet.charAt(randomInt(step.alphabet.length));
+  return Promise.resolve({ state: setPath(state, step.into, id) });
+};
+
+export interface BlockOptions {
+  /** Seeds the simulated model. See AI_SEED. */
+  aiSeed: string;
+}
+
+export function createBlockHandlers({ aiSeed }: BlockOptions): BlockHandlers {
+  return { math, string, object, condition, fetch: fetchBlock, ai: aiBlock(aiSeed), id: idBlock };
 }

@@ -5,9 +5,12 @@ import { SafeHtml, html } from './html.ts';
 
 // Page contract for tests. Tests find things only through these attributes,
 // never through text or CSS classes:
-//   <main data-workflow-id data-run-id data-run-status [data-step-id data-block]>
+//   <main data-workflow-id data-run-id data-run-status data-screen-seq
+//         [data-step-id data-block] [data-error-code]>
 //     data-run-status: "in-progress" | "complete" | "error"
+//     data-screen-seq: 1 on the run's first screen, +1 each time the run moves on
 //     data-step-id / data-block: the UI step on screen (absent once the run ends)
+//     data-error-code: why the run failed, on error pages (see EngineErrorCode)
 //   data-field="<state path>"        every displayed value, every form input,
 //                                    and each table cell ("rows.0.key")
 //   data-field-error="<field name>"  validation message for a form input
@@ -22,7 +25,7 @@ const styles = `
   h1 { font-size: 1.4rem; margin-top: 0; }
   .eyebrow { color: #5b6475; font-size: 0.85rem; margin: 0; }
   label { display: block; margin-bottom: 1rem; font-weight: 600; }
-  input { display: block; width: 100%; box-sizing: border-box; margin-top: 0.25rem;
+  input, textarea { display: block; width: 100%; box-sizing: border-box; margin-top: 0.25rem;
           padding: 0.5rem; font: inherit; border: 1px solid #b8bfcb; border-radius: 4px; }
   .error { color: #b42318; font-weight: 400; margin: 0.25rem 0 0; }
   button { font: inherit; padding: 0.5rem 1.25rem; border: 0; border-radius: 4px;
@@ -52,9 +55,10 @@ function layout(title: string, mainAttrs: SafeHtml, body: SafeHtml): string {
 
 function runAttrs(run: Run, step?: UiStep): SafeHtml {
   return html`data-workflow-id="${run.workflowId}" data-run-id="${run.id}"
-  data-run-status="${run.status}"${
+  data-run-status="${run.status}"
+  data-screen-seq="${run.screenSeq}"${
     step ? html` data-step-id="${step.id}" data-block="${step.block}"` : ''
-  }`;
+  }${run.errorCode ? html` data-error-code="${run.errorCode}"` : ''}`;
 }
 
 function stepAction(run: Run, step: UiStep): string {
@@ -71,16 +75,25 @@ function formBody(
     const error = errors[field.name];
     // Number fields use a text input with a decimal keypad: type="number" lets the
     // browser reformat or silently drop input, and the server validates anyway.
+    const control =
+      field.type === 'textarea'
+        ? html`<textarea
+            name="${field.name}"
+            data-field="${field.name}"
+            rows="6"
+            ${field.required ? html`required` : ''}
+          >
+${values[field.name] ?? ''}</textarea>`
+        : html`<input
+            name="${field.name}"
+            data-field="${field.name}"
+            type="text"
+            ${field.type === 'number' ? html`inputmode="decimal"` : ''}
+            value="${values[field.name] ?? ''}"
+            ${field.required ? html`required` : ''}
+          />`;
     return html`<label
-      >${field.label}
-      <input
-        name="${field.name}"
-        data-field="${field.name}"
-        type="text"
-        ${field.type === 'number' ? html`inputmode="decimal"` : ''}
-        value="${values[field.name] ?? ''}"
-        ${field.required ? html`required` : ''}
-      />
+      >${field.label} ${control}
       ${error ? html`<p class="error" data-field-error="${field.name}">${error}</p>` : ''}
     </label>`;
   });

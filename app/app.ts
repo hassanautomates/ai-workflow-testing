@@ -10,6 +10,8 @@ import { completePage, errorPage, homePage, notFoundPage, stepPage } from './vie
 export interface AppDeps {
   workflows: readonly Workflow[];
   engine: Engine;
+  /** Reported on /healthz so a test run can record which seed it ran against. */
+  aiSeed: string;
 }
 
 /** Urlencoded bodies arrive untyped; keep only string fields. */
@@ -20,7 +22,7 @@ function toStringRecord(body: unknown): Record<string, string> {
   );
 }
 
-export function createApp({ workflows, engine }: AppDeps): express.Express {
+export function createApp({ workflows, engine, aiSeed }: AppDeps): express.Express {
   const app = express();
   // Runs live in memory: this is a demo app with no database (see SPEC.md).
   const runs = new Map<string, Run>();
@@ -29,7 +31,7 @@ export function createApp({ workflows, engine }: AppDeps): express.Express {
   app.use(express.urlencoded({ extended: false }));
 
   app.get('/healthz', (_req, res) => {
-    res.json({ ok: true });
+    res.json({ ok: true, aiSeed });
   });
 
   app.get('/api/workflows', (_req, res) => {

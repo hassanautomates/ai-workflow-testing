@@ -40,7 +40,9 @@ export function mockApiGet(path: string): MockResponse {
 export function fetchFromMockApi(path: string): Promise<unknown> {
   const response = mockApiGet(path);
   if (response.status !== 200) {
-    return Promise.reject(new EngineError(`GET ${path} returned ${String(response.status)}`));
+    return Promise.reject(
+      new EngineError('fetch-failed', `GET ${path} returned ${String(response.status)}`),
+    );
   }
   return Promise.resolve(response.body);
 }
