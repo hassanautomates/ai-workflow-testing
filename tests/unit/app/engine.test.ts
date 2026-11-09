@@ -1,0 +1,206 @@
+import { describe, expect, it } from 'vitest';
+import { createBlockHandlers } from '../../../app/engine/blocks.ts';
+import { type Run, createEngine } from '../../../app/engine/engine.ts';
+import { type Workflow, workflowSchema } from '../../../app/engine/schema.ts';
+import { fetchFromMockApi } from '../../../app/mock-api/index.ts';
+import { loadWorkflows } from '../../../app/workflows/load.ts';
+
+const engine = createEngine({ handlers: createBlockHandlers(), fetchJson: fetchFromMockApi });
+const workflows = loadWorkflows();
+
+function workflow(id: string): Workflow {
+  const found = workflows.find((candidate) => candidate.id === id);
+  if (!found) throw new Error(`no workflow ${id}`);
+  return found;
+}
+
+/** Submits each step in turn and returns the final run. */
+async function drive(wf: Workflow, inputs: Record<string, Record<string, string>>): Promise<Run> {
+  let run = await engine.start(wf, 'test-run');
+  while (run.status === 'in-progress' && run.currentStepId !== null) {
+    const outcome = await engine.submit(
+      wf,
+      run,
+      run.currentStepId,
+      inputs[run.currentStepId] ?? {},
+    );
+    if (outcome.kind !== 'advanced') throw new Error(`step ${run.currentStepId}: ${outcome.kind}`);
+    run = outcome.run;
+  }
+  return run;
+}
+
+describe('order-total', () => {
+  it('stops at the form first', async () => {
+    const run = await engine.start(workflow('order-total'), 'r');
+    expect(run).toMatchObject({ status: 'in-progress', currentStepId: 'order', state: {} });
+  });
+
+  it('computes the total without a discount under 100', async () => {
+    const run = await drive(workflow('order-total'), {
+      order: { quantity: '3', unitPrice: '19.99' },
+    });
+    expect(run.status).toBe('complete');
+    expect(run.state).toMatchObject({ subtotal: 59.97, discount: 0, tax: 4.95, total: 64.92 });
+    expect(run.state.summary).toBe('3 × 19.99, total 64.92');
+  });
+
+  it('takes the discount branch at 100 or more', async () => {
+    const run = await drive(workflow('order-total'), {
+      order: { quantity: '6', unitPrice: '19.99' },
+    });
+    expect(run.state).toMatchObject({
+      subtotal: 119.94,
+      discount: 11.99,
+      tax: 8.91,
+      total: 116.86,
+    });
+  });
+
+  it('rejects invalid form input without changing the run', async () => {
+    const wf = workflow('order-total');
+    const run = await engine.start(wf, 'r');
+    const outcome = await engine.submit(wf, run, 'order', { quantity: 'three', unitPrice: '' });
+    expect(outcome.kind).toBe('invalid');
+    if (outcome.kind !== 'invalid') return;
+    expect(outcome.errors).toEqual({
+      quantity: 'Quantity must be a number',
+      unitPrice: 'Unit price is required',
+    });
+    expect(outcome.run).toBe(run);
+  });
+
+  it('treats a submit for a step not on screen as stale', async () => {
+    const wf = workflow('order-total');
+    const run = await engine.start(wf, 'r');
+    const outcome = await engine.submit(wf, run, 'receipt', {});
+    expect(outcome).toEqual({ kind: 'stale', run });
+  });
+});
+
+describe('customer-lookup', () => {
+  it('fetches and reshapes the customer, then shows the orders table', async () => {
+    const wf = workflow('customer-lookup');
+    let run = await engine.start(wf, 'r');
+    const outcome = await engine.submit(wf, run, 'lookup', { customerId: 'C-1001' });
+    if (outcome.kind !== 'advanced') throw new Error(outcome.kind);
+    run = outcome.run;
+    expect(run.currentStepId).toBe('profile');
+    expect(run.state).toMatchObject({
+      fullName: 'Mira Okafor',
+      email: 'mira.okafor@example.com',
+      location: 'Lisbon, PT',
+      account: { tier: 'gold', since: '2019-04-12' },
+    });
+  });
+
+  it('ends the run with an error for an unknown customer', async () => {
+    const run = await drive(workflow('customer-lookup'), { lookup: { customerId: 'C-9999' } });
+    expect(run).toMatchObject({ status: 'error', currentStepId: null });
+    expect(run.error).toContain('404');
+  });
+
+  it('handles a customer with no orders', async () => {
+    const run = await drive(workflow('customer-lookup'), { lookup: { customerId: 'C-1003' } });
+    expect(run.status).toBe('complete');
+  });
+});
+
+describe('blocks not used by the shipped workflows', () => {
+  const custom = workflowSchema.parse({
+    id: 'blocks',
+    name: 'Block coverage',
+    published: false,
+    steps: [
+      {
+        id: 'in',
+        block: 'form',
+        title: 'In',
+        fields: [{ name: 'raw', label: 'Raw', type: 'text', sample: ' Hi ' }],
+      },
+      { id: 'trimmed', block: 'string', op: 'trim', args: [{ ref: 'raw' }], into: 'trimmed' },
+      { id: 'upper', block: 'string', op: 'upper', args: [{ ref: 'trimmed' }], into: 'shout' },
+      { id: 'a', block: 'object', op: 'set', value: { ref: 'shout' }, into: 'left.word' },
+      { id: 'b', block: 'object', op: 'set', value: 1, into: 'right.count' },
+      { id: 'merged', block: 'object', op: 'merge', sources: ['left', 'right'], into: 'both' },
+      {
+        id: 'half',
+        block: 'math',
+        op: 'div',
+        args: [{ ref: 'both.count' }, 3],
+        decimals: 3,
+        into: 'third',
+      },
+      {
+        id: 'is-hi',
+        block: 'condition',
+        if: { left: { ref: 'both.word' }, cmp: 'eq', right: 'HI' },
+        then: 'yes',
+        else: 'no',
+      },
+      { id: 'no', block: 'object', op: 'set', value: 'no', into: 'answer', next: 'out' },
+      { id: 'yes', block: 'object', op: 'set', value: 'yes', into: 'answer' },
+      { id: 'out', block: 'details', title: 'Out', fields: [{ label: 'Answer', path: 'answer' }] },
+    ],
+  });
+
+  it('runs trim, upper, set, merge, div and an eq condition', async () => {
+    const run = await drive(custom, { in: { raw: ' Hi ' } });
+    expect(run.state).toMatchObject({
+      trimmed: 'Hi',
+      shout: 'HI',
+      both: { word: 'HI', count: 1 },
+      third: 0.333,
+      answer: 'yes',
+    });
+  });
+
+  it('fails the run on division by zero', async () => {
+    const zero = workflowSchema.parse({
+      ...custom,
+      steps: custom.steps.map((step) => (step.id === 'half' ? { ...step, args: [1, 0] } : step)),
+    });
+    const run = await drive(zero, { in: { raw: 'x' } });
+    expect(run).toMatchObject({ status: 'error', error: 'step "half" divides by zero' });
+  });
+});
+
+describe('workflow validation', () => {
+  it('loads the shipped workflows sorted by id', () => {
+    expect(workflows.map((wf) => wf.id)).toEqual(['customer-lookup', 'order-total']);
+  });
+
+  it('rejects unknown step targets and duplicate ids', () => {
+    const result = workflowSchema.safeParse({
+      id: 'bad',
+      name: 'Bad',
+      published: true,
+      steps: [
+        {
+          id: 'x',
+          block: 'details',
+          title: 'X',
+          fields: [{ label: 'A', path: 'a' }],
+          next: 'nowhere',
+        },
+        { id: 'x', block: 'details', title: 'X', fields: [{ label: 'A', path: 'a' }] },
+      ],
+    });
+    expect(result.error?.issues.map((issue) => issue.message)).toEqual([
+      'duplicate step id "x"',
+      'step "x" points at unknown step "nowhere"',
+    ]);
+  });
+
+  it('rejects a workflow with no UI step', () => {
+    const result = workflowSchema.safeParse({
+      id: 'headless',
+      name: 'Headless',
+      published: true,
+      steps: [{ id: 'a', block: 'object', op: 'set', value: 1, into: 'a' }],
+    });
+    expect(result.error?.issues.map((issue) => issue.message)).toEqual([
+      'a workflow needs at least one UI step',
+    ]);
+  });
+});
