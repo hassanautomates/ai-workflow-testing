@@ -8,9 +8,7 @@
       "block": "form",
       "title": "Find a customer",
       "submitLabel": "Look up",
-      "fields": [
-        { "name": "customerId", "label": "Customer ID", "type": "text", "sample": "C-1001" }
-      ]
+      "fields": [{ "name": "customerId", "label": "Customer ID", "type": "text" }]
     },
     {
       "id": "load-customer",
@@ -70,5 +68,10 @@
         { "label": "Amount", "key": "amount" }
       ]
     }
+  ],
+  "cases": [
+    { "name": "customer with orders", "inputs": { "lookup": { "customerId": "C-1001" } } },
+    { "name": "customer with no orders", "inputs": { "lookup": { "customerId": "C-1003" } } },
+    { "name": "unknown customer", "inputs": { "lookup": { "customerId": "C-9999" } } }
   ]
 }

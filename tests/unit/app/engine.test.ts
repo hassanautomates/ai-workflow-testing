@@ -116,7 +116,7 @@ describe('blocks not used by the shipped workflows', () => {
         id: 'in',
         block: 'form',
         title: 'In',
-        fields: [{ name: 'raw', label: 'Raw', type: 'text', sample: ' Hi ' }],
+        fields: [{ name: 'raw', label: 'Raw', type: 'text' }],
       },
       { id: 'trimmed', block: 'string', op: 'trim', args: [{ ref: 'raw' }], into: 'trimmed' },
       { id: 'upper', block: 'string', op: 'upper', args: [{ ref: 'trimmed' }], into: 'shout' },
@@ -142,6 +142,7 @@ describe('blocks not used by the shipped workflows', () => {
       { id: 'yes', block: 'object', op: 'set', value: 'yes', into: 'answer' },
       { id: 'out', block: 'details', title: 'Out', fields: [{ label: 'Answer', path: 'answer' }] },
     ],
+    cases: [{ name: 'padded', inputs: { in: { raw: ' Hi ' } } }],
   });
 
   it('runs trim, upper, set, merge, div and an eq condition', async () => {
@@ -185,10 +186,32 @@ describe('workflow validation', () => {
         },
         { id: 'x', block: 'details', title: 'X', fields: [{ label: 'A', path: 'a' }] },
       ],
+      cases: [{ name: 'only', inputs: {} }],
     });
     expect(result.error?.issues.map((issue) => issue.message)).toEqual([
       'duplicate step id "x"',
       'step "x" points at unknown step "nowhere"',
+    ]);
+  });
+
+  it('rejects cases that target missing forms or fields, and duplicate case names', () => {
+    const result = workflowSchema.safeParse({
+      id: 'cases',
+      name: 'Cases',
+      published: true,
+      steps: [
+        { id: 'f', block: 'form', title: 'F', fields: [{ name: 'a', label: 'A', type: 'text' }] },
+        { id: 'd', block: 'details', title: 'D', fields: [{ label: 'A', path: 'a' }] },
+      ],
+      cases: [
+        { name: 'one', inputs: { f: { a: 'x', b: 'y' } } },
+        { name: 'one', inputs: { d: { a: 'x' } } },
+      ],
+    });
+    expect(result.error?.issues.map((issue) => issue.message)).toEqual([
+      'case "one" sets unknown field "b" on "f"',
+      'duplicate case name "one"',
+      'case "one" has inputs for "d", which is not a form step',
     ]);
   });
 
@@ -198,6 +221,7 @@ describe('workflow validation', () => {
       name: 'Headless',
       published: true,
       steps: [{ id: 'a', block: 'object', op: 'set', value: 1, into: 'a' }],
+      cases: [{ name: 'only', inputs: {} }],
     });
     expect(result.error?.issues.map((issue) => issue.message)).toEqual([
       'a workflow needs at least one UI step',

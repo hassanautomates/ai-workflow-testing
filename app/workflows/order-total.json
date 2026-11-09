@@ -9,8 +9,8 @@
       "title": "New order",
       "submitLabel": "Calculate",
       "fields": [
-        { "name": "quantity", "label": "Quantity", "type": "number", "sample": "3" },
-        { "name": "unitPrice", "label": "Unit price", "type": "number", "sample": "19.99" }
+        { "name": "quantity", "label": "Quantity", "type": "number" },
+        { "name": "unitPrice", "label": "Unit price", "type": "number" }
       ]
     },
     {
@@ -80,6 +80,16 @@
         { "label": "Total", "path": "total" },
         { "label": "Summary", "path": "summary" }
       ]
+    }
+  ],
+  "cases": [
+    {
+      "name": "under 100, no discount",
+      "inputs": { "order": { "quantity": "3", "unitPrice": "19.99" } }
+    },
+    {
+      "name": "100 or more, 10% discount",
+      "inputs": { "order": { "quantity": "6", "unitPrice": "19.99" } }
     }
   ]
 }

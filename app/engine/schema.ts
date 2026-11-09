@@ -90,8 +90,6 @@ const formField = z.strictObject({
   label: z.string().min(1),
   type: z.enum(['text', 'number']),
   required: z.boolean().default(true),
-  /** A valid example input. Tests use it to fill the form. */
-  sample: z.string(),
 });
 
 const formStep = z.strictObject({
@@ -130,14 +128,50 @@ export const headlessStepSchema = z.union([
 export const uiStepSchema = z.discriminatedUnion('block', [formStep, detailsStep, tableStep]);
 const stepSchema = z.union([headlessStepSchema, uiStepSchema]);
 
+/**
+ * A named set of form inputs that drives one run end to end, keyed by form
+ * step id, then field name. Tests run once per case. The engine never reads
+ * these; they live in the workflow so a new workflow ships with its own cases.
+ */
+const caseSchema = z.strictObject({
+  name: z.string().min(1),
+  inputs: z.record(stepId, z.record(z.string(), z.string())),
+});
+
 export const workflowSchema = z
   .strictObject({
     id: stepId,
     name: z.string().min(1),
     published: z.boolean(),
     steps: z.array(stepSchema).min(1),
+    cases: z.array(caseSchema).min(1),
   })
   .superRefine((workflow, ctx) => {
+    const caseNames = new Set<string>();
+    for (const testCase of workflow.cases) {
+      if (caseNames.has(testCase.name)) {
+        ctx.addIssue({ code: 'custom', message: `duplicate case name "${testCase.name}"` });
+      }
+      caseNames.add(testCase.name);
+      for (const [stepKey, values] of Object.entries(testCase.inputs)) {
+        const form = workflow.steps.find((step) => step.id === stepKey);
+        if (form?.block !== 'form') {
+          ctx.addIssue({
+            code: 'custom',
+            message: `case "${testCase.name}" has inputs for "${stepKey}", which is not a form step`,
+          });
+          continue;
+        }
+        for (const name of Object.keys(values)) {
+          if (!form.fields.some((field) => field.name === name)) {
+            ctx.addIssue({
+              code: 'custom',
+              message: `case "${testCase.name}" sets unknown field "${name}" on "${stepKey}"`,
+            });
+          }
+        }
+      }
+    }
     const ids = new Set<string>();
     for (const step of workflow.steps) {
       if (ids.has(step.id))
