@@ -5,7 +5,19 @@ import type { Expected } from './mirror.ts';
 import { displayedViolations } from './shape.ts';
 
 /**
- * The element shows exactly the value the mirror predicted.
+ * The raw text of an element, exactly as rendered. Not Playwright's
+ * toHaveText, which collapses whitespace: an exact check must never be
+ * looser than a shape check, and both read the same raw text.
+ * (The screen is already settled when this runs; textContent() still waits
+ * for the element to be attached.)
+ */
+async function rawText(element: Locator): Promise<string> {
+  return (await element.textContent()) ?? '';
+}
+
+/**
+ * The element shows exactly the value the mirror predicted, character for
+ * character, whitespace included.
  *
  * Refuses tainted values outright: the mirror doesn't know what a model
  * produced, so any exact comparison would be against a guess and would flake.
@@ -17,7 +29,7 @@ export async function assertExact(element: Locator, expected: Expected): Promise
       `refusing to compare "${expected.path}" exactly: it is tainted (${expected.origin}); use assertShape`,
     );
   }
-  await expect(element, `"${expected.path}" should show the mirrored value`).toHaveText(
+  expect(await rawText(element), `"${expected.path}" should show the mirrored value`).toBe(
     displayText(expected.value),
   );
 }
@@ -34,8 +46,7 @@ export async function assertShape(element: Locator, expected: Expected): Promise
   if (!expected.tainted) {
     throw new HarnessError(`"${expected.path}" is clean; check it with assertExact, not a shape`);
   }
-  await expect(element, `"${expected.path}" should be on the page`).toBeAttached();
-  const text = (await element.textContent()) ?? '';
+  const text = await rawText(element);
   expect(
     displayedViolations(text, expected.rule),
     `"${expected.path}" (${expected.origin}) showed "${text}", which breaks its declared shape`,

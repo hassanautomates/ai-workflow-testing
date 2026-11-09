@@ -158,7 +158,11 @@ export function displayedViolations(text: string, rule: ShapeRule): string[] {
     case 'string':
       return valueViolations(text, rule, 'text');
     case 'number': {
-      const parsed = text.trim() === '' ? NaN : Number(text);
+      // A plain number literal and nothing else. Number() alone would quietly
+      // accept surrounding whitespace ("\n42\n"), making this looser than an
+      // exact check on the same text.
+      const literal = /^-?\d+(\.\d+)?(e[-+]?\d+)?$/i.test(text);
+      const parsed = literal ? Number(text) : NaN;
       return Number.isFinite(parsed)
         ? valueViolations(parsed, rule, 'text')
         : [`"${text}" should be a number`];

@@ -12,6 +12,8 @@ describe('displayedViolations', () => {
   it('rejects non-numbers, out-of-range values and extra decimals', () => {
     expect(displayedViolations('', amount)).toHaveLength(1);
     expect(displayedViolations('forty', amount)).toHaveLength(1);
+    expect(displayedViolations('\n42\n', amount)).toEqual(['"\n42\n" should be a number']);
+    expect(displayedViolations(' 42', amount)).toHaveLength(1);
     expect(displayedViolations('100.01', amount)).toEqual(['text is above 100']);
     expect(displayedViolations('1.234', amount)).toEqual(['text has more than 2 decimals']);
   });
