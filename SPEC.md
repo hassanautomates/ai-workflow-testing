@@ -32,7 +32,7 @@ A Node + TypeScript web app that runs **workflows defined as JSON**. Each workfl
 | `table` | rows rendered from an array in state |
 
 **Endpoints:**
-- `GET /api/workflows` lists published workflows (`{ id, name, published, steps }`).
+- `GET /api/workflows` lists published workflows (`{ id, name, published, steps, cases }`). `cases` are named sets of form inputs, keyed by form step and field; tests are generated one per published workflow per case.
 - `GET /run/:workflowId` starts a run and renders the first UI step.
 - The mock data API (`/api/customers/:id`, `/api/rates`) is deterministic.
 - `AI_SEED` env var: seeds the simulated model. If unset, each run uses a random seed. This is how variance is produced on purpose.
