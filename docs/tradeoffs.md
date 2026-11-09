@@ -67,3 +67,16 @@ a real system may behave.
 What would close it: mix a per-run nonce into the ID stream and record it
 next to the seed, so reproduction needs both. Or take uniqueness from a
 store, which this demo deliberately doesn't have.
+
+## 5. Replayed fetches depend on the live API answering the same way twice
+
+The mirror predicts a `fetch` by sending the same GET to the same mock API the
+app used. That only works because the mock API is deterministic: same request,
+same response, always (and a test checks it). Against a real backend whose
+data changes between the app's request and the mirror's, the two would
+disagree and the test would fail for a reason that has nothing to do with the
+app.
+
+What would close it: point both at a recorded or snapshotted API for the
+length of a run, or have the app expose the response it actually received so
+the mirror can use that instead of replaying.
