@@ -50,3 +50,20 @@ No shipped workflow does this. What would close it: an observed-fetch mode
 that reads the URL the app actually requested (from a request log or a
 data attribute) and replays that, the same way observed routing reads the
 branch the app actually took.
+
+## 4. With a fixed seed, identical runs get identical IDs
+
+Generated IDs are derived from `AI_SEED`, the step and the run's own state,
+on a random stream separate from the model's. That is what lets a seed
+reproduce a failing run exactly, references included, even when tests run in
+parallel and in a different order.
+
+The cost: two runs with the same seed and the same inputs produce the same
+reference. In `order-confirmation`, two identical orders placed against one
+server get the same `ORD-…` number. Tests never notice, because each case
+runs once per seed and references are only shape-checked, but it is not how
+a real system may behave.
+
+What would close it: mix a per-run nonce into the ID stream and record it
+next to the seed, so reproduction needs both. Or take uniqueness from a
+store, which this demo deliberately doesn't have.
