@@ -1,0 +1,76 @@
+{
+  "id": "ticket-triage",
+  "name": "Ticket triage",
+  "published": true,
+  "steps": [
+    {
+      "id": "ticket",
+      "block": "form",
+      "title": "New support ticket",
+      "submitLabel": "Triage",
+      "fields": [{ "name": "ticketText", "label": "Ticket", "type": "textarea" }]
+    },
+    {
+      "id": "classify",
+      "block": "ai",
+      "prompt": "Classify this support ticket into a queue and say how confident you are.",
+      "input": { "ref": "ticketText" },
+      "output": {
+        "queue": { "type": "string", "allowed": ["billing", "technical", "account"] },
+        "confidence": { "type": "number", "min": 0, "max": 1, "decimals": 2 },
+        "summary": { "type": "string", "required": false, "maxLength": 80 }
+      },
+      "into": "triage"
+    },
+    {
+      "id": "confident-enough",
+      "block": "condition",
+      "if": { "left": { "ref": "triage.confidence" }, "cmp": "gte", "right": 0.75 },
+      "then": "auto-route",
+      "else": "review"
+    },
+    {
+      "id": "auto-route",
+      "block": "string",
+      "op": "template",
+      "template": "Sent to {{triage.queue}} automatically",
+      "into": "outcome",
+      "next": "routed"
+    },
+    {
+      "id": "review",
+      "block": "form",
+      "title": "Low confidence: pick the queue",
+      "submitLabel": "Route",
+      "fields": [{ "name": "reviewedQueue", "label": "Queue", "type": "text" }]
+    },
+    {
+      "id": "reviewed",
+      "block": "string",
+      "op": "template",
+      "template": "Sent to {{reviewedQueue}} after review",
+      "into": "outcome"
+    },
+    {
+      "id": "routed",
+      "block": "details",
+      "title": "Ticket routed",
+      "fields": [
+        { "label": "Outcome", "path": "outcome" },
+        { "label": "Model's queue", "path": "triage.queue" },
+        { "label": "Model's confidence", "path": "triage.confidence" }
+      ]
+    }
+  ],
+  "cases": [
+    {
+      "name": "duplicate charge",
+      "inputs": {
+        "ticket": {
+          "ticketText": "Hi, I was charged twice for my November invoice. Please refund the duplicate billing charge."
+        },
+        "review": { "reviewedQueue": "billing" }
+      }
+    }
+  ]
+}

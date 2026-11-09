@@ -1,0 +1,70 @@
+{
+  "id": "invoice-total",
+  "name": "Invoice total from an extracted amount",
+  "published": true,
+  "steps": [
+    {
+      "id": "paste",
+      "block": "form",
+      "title": "Paste an invoice",
+      "submitLabel": "Calculate",
+      "fields": [{ "name": "invoiceText", "label": "Invoice text", "type": "textarea" }]
+    },
+    {
+      "id": "extract",
+      "block": "ai",
+      "prompt": "Extract the net amount and currency from this invoice.",
+      "input": { "ref": "invoiceText" },
+      "output": {
+        "netAmount": { "type": "number", "min": 0, "max": 50000, "decimals": 2 },
+        "currency": { "type": "string", "allowed": ["EUR", "GBP", "USD"] }
+      },
+      "into": "invoice"
+    },
+    { "id": "load-rates", "block": "fetch", "path": "/api/rates", "into": "rates" },
+    {
+      "id": "tax-rate",
+      "block": "object",
+      "op": "set",
+      "value": { "ref": "rates.taxRates.standard" },
+      "into": "taxRate"
+    },
+    {
+      "id": "tax",
+      "block": "math",
+      "op": "mul",
+      "args": [{ "ref": "invoice.netAmount" }, { "ref": "taxRate" }],
+      "decimals": 2,
+      "into": "tax"
+    },
+    {
+      "id": "total",
+      "block": "math",
+      "op": "add",
+      "args": [{ "ref": "invoice.netAmount" }, { "ref": "tax" }],
+      "decimals": 2,
+      "into": "total"
+    },
+    {
+      "id": "summary",
+      "block": "details",
+      "title": "Invoice total",
+      "fields": [
+        { "label": "Tax rate", "path": "taxRate" },
+        { "label": "Net amount", "path": "invoice.netAmount" },
+        { "label": "Tax", "path": "tax" },
+        { "label": "Total", "path": "total" }
+      ]
+    }
+  ],
+  "cases": [
+    {
+      "name": "consulting invoice",
+      "inputs": {
+        "paste": {
+          "invoiceText": "Invoice 2031 from Harbour Analytics\n12 hours consulting @ 95.00\nNet amount: 1,140.00\nCurrency: GBP"
+        }
+      }
+    }
+  ]
+}

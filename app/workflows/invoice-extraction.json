@@ -1,0 +1,62 @@
+{
+  "id": "invoice-extraction",
+  "name": "Invoice extraction",
+  "published": true,
+  "steps": [
+    {
+      "id": "paste",
+      "block": "form",
+      "title": "Paste an invoice",
+      "submitLabel": "Extract",
+      "fields": [
+        { "name": "reference", "label": "Your reference", "type": "text" },
+        { "name": "invoiceText", "label": "Invoice text", "type": "textarea" }
+      ]
+    },
+    {
+      "id": "extract",
+      "block": "ai",
+      "prompt": "Extract the vendor, amount due, currency and due date from this invoice, with your confidence.",
+      "input": { "ref": "invoiceText" },
+      "output": {
+        "vendor": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "amountDue": { "type": "number", "min": 0, "max": 100000, "decimals": 2 },
+        "currency": { "type": "string", "allowed": ["EUR", "GBP", "USD"] },
+        "dueDate": { "type": "string", "required": false, "minLength": 6, "maxLength": 30 },
+        "confidence": { "type": "number", "min": 0, "max": 1, "decimals": 2 }
+      },
+      "into": "invoice"
+    },
+    {
+      "id": "normalise-reference",
+      "block": "string",
+      "op": "upper",
+      "args": [{ "ref": "reference" }],
+      "into": "referenceCode"
+    },
+    {
+      "id": "extracted",
+      "block": "details",
+      "title": "Extracted fields",
+      "fields": [
+        { "label": "Reference", "path": "referenceCode" },
+        { "label": "Vendor", "path": "invoice.vendor" },
+        { "label": "Amount due", "path": "invoice.amountDue" },
+        { "label": "Currency", "path": "invoice.currency" },
+        { "label": "Confidence", "path": "invoice.confidence" },
+        { "label": "Raw model output", "path": "invoice" }
+      ]
+    }
+  ],
+  "cases": [
+    {
+      "name": "paper supplier invoice",
+      "inputs": {
+        "paste": {
+          "reference": "po-2291",
+          "invoiceText": "INVOICE 4471\nVendor: Northwind Paper Co\nIssued: 2026-10-02\nDue date: 2026-11-01\n3 x A4 paper box @ 41.50\nAmount due: 124.50\nCurrency: EUR"
+        }
+      }
+    }
+  ]
+}

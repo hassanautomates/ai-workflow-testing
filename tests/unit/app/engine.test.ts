@@ -182,7 +182,14 @@ describe('blocks not used by the shipped workflows', () => {
 
 describe('workflow validation', () => {
   it('loads the shipped workflows sorted by id', () => {
-    expect(workflows.map((wf) => wf.id)).toEqual(['customer-lookup', 'order-total']);
+    expect(workflows.map((wf) => wf.id)).toEqual([
+      'customer-lookup',
+      'invoice-extraction',
+      'invoice-total',
+      'order-confirmation',
+      'order-total',
+      'ticket-triage',
+    ]);
   });
 
   it('rejects unknown step targets and duplicate ids', () => {

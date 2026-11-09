@@ -17,7 +17,14 @@ test('lists published workflows with their steps', async ({ request }) => {
     published: boolean;
     steps: unknown[];
   }[];
-  expect(workflows.map((workflow) => workflow.id)).toEqual(['customer-lookup', 'order-total']);
+  expect(workflows.map((workflow) => workflow.id)).toEqual([
+    'customer-lookup',
+    'invoice-extraction',
+    'invoice-total',
+    'order-confirmation',
+    'order-total',
+    'ticket-triage',
+  ]);
   for (const workflow of workflows) {
     expect(workflow.published).toBe(true);
     expect(workflow.steps.length).toBeGreaterThan(0);

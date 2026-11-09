@@ -1,0 +1,78 @@
+{
+  "id": "order-confirmation",
+  "name": "Order confirmation",
+  "published": true,
+  "steps": [
+    {
+      "id": "order",
+      "block": "form",
+      "title": "Place an order",
+      "submitLabel": "Confirm",
+      "fields": [
+        { "name": "customerName", "label": "Your name", "type": "text" },
+        { "name": "quantity", "label": "Quantity", "type": "number" },
+        { "name": "unitPrice", "label": "Unit price", "type": "number" }
+      ]
+    },
+    {
+      "id": "total",
+      "block": "math",
+      "op": "mul",
+      "args": [{ "ref": "quantity" }, { "ref": "unitPrice" }],
+      "decimals": 2,
+      "into": "total"
+    },
+    {
+      "id": "reference",
+      "block": "id",
+      "prefix": "ORD-",
+      "length": 8,
+      "into": "orderRef"
+    },
+    {
+      "id": "order-customer",
+      "block": "object",
+      "op": "set",
+      "value": { "ref": "customerName" },
+      "into": "order.customer"
+    },
+    {
+      "id": "order-total",
+      "block": "object",
+      "op": "set",
+      "value": { "ref": "total" },
+      "into": "order.total"
+    },
+    {
+      "id": "order-reference",
+      "block": "object",
+      "op": "set",
+      "value": { "ref": "orderRef" },
+      "into": "order.reference"
+    },
+    {
+      "id": "message",
+      "block": "string",
+      "op": "template",
+      "template": "Thanks {{order.customer}}, order {{order.reference}} is confirmed.",
+      "into": "message"
+    },
+    {
+      "id": "confirmation",
+      "block": "details",
+      "title": "Order confirmed",
+      "fields": [
+        { "label": "Customer", "path": "order.customer" },
+        { "label": "Total", "path": "order.total" },
+        { "label": "Reference", "path": "order.reference" },
+        { "label": "Message", "path": "message" }
+      ]
+    }
+  ],
+  "cases": [
+    {
+      "name": "two notebooks",
+      "inputs": { "order": { "customerName": "Ana Duarte", "quantity": "2", "unitPrice": "7.25" } }
+    }
+  ]
+}
