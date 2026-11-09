@@ -1,7 +1,7 @@
 import type { Run } from '../engine/engine.ts';
 import type { FormStep, UiStep, Workflow } from '../engine/schema.ts';
-import { getPath, toDisplayString } from '../engine/state.ts';
-import { SafeHtml, html } from './html.ts';
+import { getPath, hasPath, toDisplayString } from '../engine/state.ts';
+import { SafeHtml, escapeHtml, html } from './html.ts';
 
 // Page contract for tests. Tests find things only through these attributes,
 // never through text or CSS classes:
@@ -17,6 +17,7 @@ import { SafeHtml, html } from './html.ts';
 //   data-row-index="<n>"             each table body row
 //   data-action="submit" | "continue"  the button that moves the run on
 //   data-run-error                   the message on an error page
+//   data-absent                      on a data-field element whose optional value is missing
 
 const styles = `
   body { font: 16px/1.5 system-ui, sans-serif; margin: 0; background: #f6f7f9; color: #1d2330; }
@@ -109,6 +110,16 @@ function continueButton(run: Run, step: UiStep): SafeHtml {
   </form>`;
 }
 
+/**
+ * A displayed state value. Built as a plain string, not an html`` template,
+ * so a formatter can never wrap it: whitespace inside the element would
+ * become part of the value a reader (or a test) sees.
+ */
+function shownValue(tag: 'dd' | 'td', run: Run, path: string): SafeHtml {
+  const text = escapeHtml(toDisplayString(getPath(run.state, path)));
+  return new SafeHtml(`<${tag} data-field="${escapeHtml(path)}">${text}</${tag}>`);
+}
+
 function stepBody(
   run: Run,
   step: UiStep,
@@ -122,7 +133,11 @@ function stepBody(
       const rows = step.fields.map(
         (field) =>
           html`<dt>${field.label}</dt>
-            <dd data-field="${field.path}">${toDisplayString(getPath(run.state, field.path))}</dd>`,
+            ${
+              field.optional && !hasPath(run.state, field.path)
+                ? html`<dd data-field="${field.path}" data-absent></dd>`
+                : shownValue('dd', run, field.path)
+            }`,
       );
       return html`<dl>${rows}</dl>
         ${continueButton(run, step)}`;
@@ -132,8 +147,7 @@ function stepBody(
       const rows = getPath(run.state, step.rows) as readonly unknown[];
       const body = rows.map((_row, index) => {
         const cells = step.columns.map((column) => {
-          const path = `${step.rows}.${String(index)}.${column.key}`;
-          return html`<td data-field="${path}">${toDisplayString(getPath(run.state, path))}</td>`;
+          return shownValue('td', run, `${step.rows}.${String(index)}.${column.key}`);
         });
         return html`<tr data-row-index="${index}">
           ${cells}

@@ -186,8 +186,10 @@ describe('workflow validation', () => {
       'customer-lookup',
       'invoice-extraction',
       'invoice-total',
+      'order-categories',
       'order-confirmation',
       'order-total',
+      'refund-request',
       'ticket-triage',
     ]);
   });
@@ -247,5 +249,84 @@ describe('workflow validation', () => {
     expect(result.error?.issues.map((issue) => issue.message)).toEqual([
       'a workflow needs at least one UI step',
     ]);
+  });
+});
+
+describe('model-labelled rows and optional values', () => {
+  it('labels every fetched row in place, leaving the fetched fields untouched', async () => {
+    const wf = workflow('order-categories');
+    const run = await engine.start(wf, 'r');
+    const outcome = await engine.submit(wf, run, 'lookup', { customerId: 'C-1001' });
+    if (outcome.kind !== 'advanced') throw new Error(outcome.kind);
+    const orders = (outcome.run.state.customer as { orders: Record<string, unknown>[] }).orders;
+    expect(outcome.run.currentStepId).toBe('orders');
+    expect(orders.map((order) => order.id)).toEqual(['O-5001', 'O-5002', 'O-5003']);
+    for (const order of orders) {
+      expect(['office', 'electronics', 'stationery', 'furniture']).toContain(
+        (order.label as { category: string }).category,
+      );
+    }
+  });
+
+  it('renders a page with a missing optional value instead of failing the run', async () => {
+    const optional = workflowSchema.parse({
+      id: 'optional',
+      name: 'Optional',
+      published: false,
+      steps: [
+        {
+          id: 'show',
+          block: 'details',
+          title: 'Show',
+          fields: [{ label: 'Maybe', path: 'not.there', optional: true }],
+        },
+      ],
+      cases: [{ name: 'only', inputs: {} }],
+    });
+    const run = await engine.start(optional, 'r');
+    expect(run).toMatchObject({ status: 'in-progress', currentStepId: 'show' });
+  });
+
+  it('stores textarea line breaks as \\n, however the browser sent them', async () => {
+    const wf = workflow('invoice-extraction');
+    const run = await engine.start(wf, 'r');
+    const outcome = await engine.submit(wf, run, 'paste', {
+      reference: 'x',
+      invoiceText: 'Vendor: A\r\nAmount due: 5\rCurrency: EUR',
+    });
+    if (outcome.kind !== 'advanced') throw new Error(outcome.kind);
+    expect(outcome.run.state.invoiceText).toBe('Vendor: A\nAmount due: 5\nCurrency: EUR');
+  });
+
+  it('requires an ai step to have exactly one of input or each', () => {
+    const base = {
+      id: 'ai',
+      name: 'AI',
+      published: false,
+      cases: [{ name: 'only', inputs: {} }],
+    };
+    const ai = {
+      id: 'ask',
+      block: 'ai',
+      prompt: 'p',
+      output: { a: { type: 'string' } },
+      into: 'out',
+    };
+    const show = {
+      id: 'show',
+      block: 'details',
+      title: 'S',
+      fields: [{ label: 'A', path: 'out' }],
+    };
+    const neither = workflowSchema.safeParse({ ...base, steps: [ai, show] });
+    const both = workflowSchema.safeParse({
+      ...base,
+      steps: [{ ...ai, input: 'x', each: { rows: 'r', input: 'i' } }, show],
+    });
+    for (const result of [neither, both]) {
+      expect(result.error?.issues.map((issue) => issue.message)).toEqual([
+        'ai step "ask" needs exactly one of "input" or "each"',
+      ]);
+    }
   });
 });

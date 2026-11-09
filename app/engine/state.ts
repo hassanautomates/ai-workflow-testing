@@ -49,6 +49,16 @@ export function getPath(state: State, path: string): unknown {
   return current;
 }
 
+export function hasPath(state: State, path: string): boolean {
+  try {
+    getPath(state, path);
+    return true;
+  } catch (error) {
+    if (error instanceof EngineError) return false;
+    throw error;
+  }
+}
+
 /**
  * Returns a copy of `container` with `path` set. Missing parent objects are
  * created; a numeric segment inside an existing array writes that index.

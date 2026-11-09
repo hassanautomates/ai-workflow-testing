@@ -30,7 +30,13 @@ export function applyFormInput(
       }
       next = setPath(next, field.name, parsed);
     } else {
-      next = setPath(next, field.name, raw);
+      // Browsers submit textarea line breaks as CRLF; store them as \n so the
+      // same text means the same value however it arrived.
+      next = setPath(
+        next,
+        field.name,
+        field.type === 'textarea' ? raw.replace(/\r\n?/g, '\n') : raw,
+      );
     }
   }
   if (Object.keys(errors).length > 0) return { ok: false, errors, values: { ...input } };

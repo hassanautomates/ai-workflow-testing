@@ -44,6 +44,7 @@
         { "label": "Amount due", "path": "invoice.amountDue" },
         { "label": "Currency", "path": "invoice.currency" },
         { "label": "Confidence", "path": "invoice.confidence" },
+        { "label": "Due date", "path": "invoice.dueDate", "optional": true },
         { "label": "Raw model output", "path": "invoice" }
       ]
     }

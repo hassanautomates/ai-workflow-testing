@@ -1,0 +1,32 @@
+{
+  "id": "refund-request",
+  "name": "Refund request (draft)",
+  "published": false,
+  "steps": [
+    {
+      "id": "request",
+      "block": "form",
+      "title": "Request a refund",
+      "submitLabel": "Submit",
+      "fields": [
+        { "name": "orderId", "label": "Order ID", "type": "text" },
+        { "name": "reason", "label": "Reason", "type": "textarea" }
+      ]
+    },
+    {
+      "id": "received",
+      "block": "details",
+      "title": "Request received",
+      "fields": [
+        { "label": "Order", "path": "orderId" },
+        { "label": "Reason", "path": "reason" }
+      ]
+    }
+  ],
+  "cases": [
+    {
+      "name": "damaged item",
+      "inputs": { "request": { "orderId": "O-5002", "reason": "Arrived damaged." } }
+    }
+  ]
+}

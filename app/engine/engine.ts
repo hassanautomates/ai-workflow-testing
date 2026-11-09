@@ -71,7 +71,7 @@ export function createEngine({ handlers, fetchJson }: EngineDeps) {
   /** Fails fast if a UI step would render values that aren't there. */
   function checkUiStep(step: UiStep, state: State): void {
     if (step.block === 'details') {
-      for (const field of step.fields) getPath(state, field.path);
+      for (const field of step.fields) if (!field.optional) getPath(state, field.path);
     } else if (step.block === 'table') {
       const rows = getPath(state, step.rows);
       if (!Array.isArray(rows) || !rows.every(isPlainObject)) {

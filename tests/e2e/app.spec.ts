@@ -21,6 +21,7 @@ test('lists published workflows with their steps', async ({ request }) => {
     'customer-lookup',
     'invoice-extraction',
     'invoice-total',
+    'order-categories',
     'order-confirmation',
     'order-total',
     'ticket-triage',

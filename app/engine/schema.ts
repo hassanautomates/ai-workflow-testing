@@ -117,8 +117,13 @@ const aiStep = z.strictObject({
   block: z.literal('ai'),
   /** What the model is asked to do. Documentation, and part of the simulation seed. */
   prompt: z.string().min(1),
-  /** The text the model reads. */
-  input: operand,
+  /** The text the model reads. Give this or `each`, not both. */
+  input: operand.optional(),
+  /**
+   * Call the model once per row of a list instead: `input` names the row
+   * field it reads, and `into` is where each answer goes inside that row.
+   */
+  each: z.strictObject({ rows: statePath, input: statePath }).optional(),
   /** Field name → rule. The model returns an object with these fields. */
   output: z.record(z.string().regex(/^[A-Za-z_]\w*$/), outputRule),
   into: statePath,
@@ -160,7 +165,16 @@ const detailsStep = z.strictObject({
   ...stepBase,
   block: z.literal('details'),
   title: z.string().min(1),
-  fields: z.array(z.strictObject({ label: z.string().min(1), path: statePath })).min(1),
+  fields: z
+    .array(
+      z.strictObject({
+        label: z.string().min(1),
+        path: statePath,
+        /** May be missing (an optional model field); shown as an empty, marked value. */
+        optional: z.boolean().default(false),
+      }),
+    )
+    .min(1),
 });
 
 const tableStep = z.strictObject({
@@ -259,6 +273,12 @@ export const workflowSchema = z
         }
       }
       if (step.block === 'ai') {
+        if ((step.input === undefined) === (step.each === undefined)) {
+          ctx.addIssue({
+            code: 'custom',
+            message: `ai step "${step.id}" needs exactly one of "input" or "each"`,
+          });
+        }
         const rules = Object.entries(step.output);
         if (!rules.some(([, rule]) => rule.required)) {
           ctx.addIssue({ code: 'custom', message: `ai step "${step.id}" needs a required field` });

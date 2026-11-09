@@ -179,11 +179,10 @@ const fetchBlock: Handler<'fetch'> = async (step, { state, fetchJson }) => {
 
 /** Model output is untrusted: anything outside the declared contract ends the run. */
 function aiBlock(seed: string): Handler<'ai'> {
-  return (step, { state }) => {
-    const input = requireString(step.id, resolveOperand(state, step.input));
+  const ask = (step: StepOf<'ai'>, callId: string, input: string) => {
     const output = simulateModel({
       seed,
-      stepId: step.id,
+      stepId: callId,
       prompt: step.prompt,
       input,
       output: step.output,
@@ -195,7 +194,29 @@ function aiBlock(seed: string): Handler<'ai'> {
         `step "${step.id}": model output broke its contract: ${problems.join('; ')}`,
       );
     }
-    return Promise.resolve({ state: setPath(state, step.into, output) });
+    return output;
+  };
+
+  return (step, { state }) => {
+    if (step.each === undefined) {
+      const input = requireString(step.id, resolveOperand(state, step.input ?? null));
+      return Promise.resolve({ state: setPath(state, step.into, ask(step, step.id, input)) });
+    }
+    // One call per row; each answer is written into its own row.
+    const rows = getPath(state, step.each.rows);
+    if (!Array.isArray(rows)) {
+      throw new EngineError('wrong-type', `step "${step.id}": "${step.each.rows}" is not a list`);
+    }
+    let next = state;
+    rows.forEach((row, i) => {
+      const input = requireString(
+        step.id,
+        getPath(requireObject(step.id, row), step.each?.input ?? ''),
+      );
+      const answer = ask(step, `${step.id}#${String(i)}`, input);
+      next = setPath(next, `${step.each?.rows ?? ''}.${String(i)}.${step.into}`, answer);
+    });
+    return Promise.resolve({ state: next });
   };
 }
 

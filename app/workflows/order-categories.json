@@ -1,0 +1,50 @@
+{
+  "id": "order-categories",
+  "name": "Order history with categories",
+  "published": true,
+  "steps": [
+    {
+      "id": "lookup",
+      "block": "form",
+      "title": "Find a customer",
+      "submitLabel": "Show orders",
+      "fields": [{ "name": "customerId", "label": "Customer ID", "type": "text" }]
+    },
+    {
+      "id": "load-customer",
+      "block": "fetch",
+      "path": "/api/customers/{{customerId}}",
+      "into": "customer"
+    },
+    {
+      "id": "categorise",
+      "block": "ai",
+      "prompt": "Put this purchased item into one product category.",
+      "each": { "rows": "customer.orders", "input": "item" },
+      "output": {
+        "category": {
+          "type": "string",
+          "allowed": ["office", "electronics", "stationery", "furniture"]
+        }
+      },
+      "into": "label"
+    },
+    {
+      "id": "orders",
+      "block": "table",
+      "title": "Orders",
+      "rows": "customer.orders",
+      "columns": [
+        { "label": "Order", "key": "id" },
+        { "label": "Item", "key": "item" },
+        { "label": "Amount", "key": "amount" },
+        { "label": "Category (model)", "key": "label.category" }
+      ]
+    }
+  ],
+  "cases": [
+    { "name": "customer with three orders", "inputs": { "lookup": { "customerId": "C-1001" } } },
+    { "name": "customer with two orders", "inputs": { "lookup": { "customerId": "C-1002" } } },
+    { "name": "customer with no orders", "inputs": { "lookup": { "customerId": "C-1003" } } }
+  ]
+}

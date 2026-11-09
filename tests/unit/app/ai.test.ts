@@ -30,6 +30,7 @@ describe('simulated model', () => {
     expect(aiCalls.map((c) => c.workflow).sort()).toEqual([
       'invoice-extraction',
       'invoice-total',
+      'order-categories',
       'ticket-triage',
     ]);
   });
