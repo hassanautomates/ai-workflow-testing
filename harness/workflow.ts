@@ -1,4 +1,5 @@
 import { HarnessError } from './errors.ts';
+import type { ShapeRule } from './shape.ts';
 
 // The harness's own view of a workflow, as served by GET /api/workflows. It is
 // declared here rather than imported from the app on purpose: if the app's
@@ -37,17 +38,33 @@ export type ConditionStep = StepCommon & {
   else: string;
 };
 export type FetchStep = StepCommon & { block: 'fetch'; path: string; into: string };
+/** Unmirrored: the mirror only knows its output contract, one rule per field. */
+export type AiStep = StepCommon & {
+  block: 'ai';
+  input: Operand;
+  output: Record<string, ShapeRule>;
+  into: string;
+};
+/** Unmirrored: a random ID, known only by its format. */
+export type IdStep = StepCommon & {
+  block: 'id';
+  prefix: string;
+  length: number;
+  alphabet: string;
+  into: string;
+};
 
 export interface FormField {
   name: string;
-  type: 'text' | 'number';
+  type: 'text' | 'textarea' | 'number';
   required: boolean;
 }
 export type FormStep = StepCommon & { block: 'form'; fields: FormField[] };
 export type DetailsStep = StepCommon & { block: 'details'; fields: { path: string }[] };
 export type TableStep = StepCommon & { block: 'table'; rows: string; columns: { key: string }[] };
 
-export type HeadlessStep = MathStep | StringStep | ObjectStep | ConditionStep | FetchStep;
+export type HeadlessStep =
+  MathStep | StringStep | ObjectStep | ConditionStep | FetchStep | AiStep | IdStep;
 export type UiStep = FormStep | DetailsStep | TableStep;
 export type Step = HeadlessStep | UiStep;
 
@@ -132,6 +149,53 @@ function strings(source: Json, key: string, where: string): string[] {
   });
 }
 
+function optionalNumber(source: Json, key: string, where: string): number | undefined {
+  const value = source[key];
+  if (value === undefined) return undefined;
+  if (typeof value !== 'number') throw new HarnessError(`${where}.${key}: expected a number`);
+  return value;
+}
+
+function numbers(source: Json, key: string, where: string): number[] {
+  return list(source, key, where).map((item, i) => {
+    if (typeof item !== 'number') {
+      throw new HarnessError(`${where}.${key}[${String(i)}]: expected a number`);
+    }
+    return item;
+  });
+}
+
+/**
+ * One field of an ai block's output contract, read as a shape rule. Only
+ * bounds actually declared in the JSON end up in the rule.
+ */
+function parseOutputRule(raw: unknown, where: string): ShapeRule {
+  const source = record(raw, where);
+  // The app's schema defaults `required` to true.
+  const required = source.required !== false;
+  switch (oneOf(source, 'type', ['string', 'number', 'boolean'], where)) {
+    case 'string':
+      return {
+        type: 'string',
+        required,
+        minLength: optionalNumber(source, 'minLength', where),
+        maxLength: optionalNumber(source, 'maxLength', where),
+        allowed: source.allowed === undefined ? undefined : strings(source, 'allowed', where),
+      };
+    case 'number':
+      return {
+        type: 'number',
+        required,
+        min: optionalNumber(source, 'min', where),
+        max: optionalNumber(source, 'max', where),
+        decimals: optionalNumber(source, 'decimals', where),
+        allowed: source.allowed === undefined ? undefined : numbers(source, 'allowed', where),
+      };
+    case 'boolean':
+      return { type: 'boolean', required };
+  }
+}
+
 function parseStep(raw: unknown, where: string): Step {
   const source = record(raw, where);
   const id = text(source, 'id', where);
@@ -199,6 +263,37 @@ function parseStep(raw: unknown, where: string): Step {
     }
     case 'fetch':
       return { ...common, block, path: text(source, 'path', at), into: text(source, 'into', at) };
+    case 'ai': {
+      const output: Record<string, ShapeRule> = {};
+      for (const [field, rule] of Object.entries(record(source.output, `${at}.output`))) {
+        output[field] = parseOutputRule(rule, `${at}.output.${field}`);
+      }
+      return {
+        ...common,
+        block,
+        input: operand(source.input, `${at}.input`),
+        output,
+        into: text(source, 'into', at),
+      };
+    }
+    case 'id': {
+      const length = source.length;
+      if (typeof length !== 'number' || !Number.isInteger(length) || length < 1) {
+        throw new HarnessError(`${at}.length: expected a positive integer`);
+      }
+      const alphabet = text(source, 'alphabet', at);
+      if (!/^[A-Z0-9]+$/.test(alphabet)) {
+        throw new HarnessError(`${at}.alphabet: expected only A-Z and 0-9`);
+      }
+      return {
+        ...common,
+        block,
+        prefix: text(source, 'prefix', at),
+        length,
+        alphabet,
+        into: text(source, 'into', at),
+      };
+    }
     case 'form':
       return {
         ...common,
@@ -208,7 +303,7 @@ function parseStep(raw: unknown, where: string): Step {
           const where = `${at}.fields[${String(i)}]`;
           return {
             name: text(field, 'name', where),
-            type: oneOf(field, 'type', ['text', 'number'], where),
+            type: oneOf(field, 'type', ['text', 'textarea', 'number'], where),
             // The app's schema defaults `required` to true.
             required: field.required !== false,
           };

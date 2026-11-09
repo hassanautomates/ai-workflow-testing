@@ -51,7 +51,7 @@ describe('Mirror', () => {
     const small = await Mirror.start(pricing, noFetch);
     await small.submit({ qty: '3', price: '19.99' });
     expect(small.screen).toMatchObject({ kind: 'step', step: { id: 'show' } });
-    expect(small.expected('sub')).toEqual({ path: 'sub', value: 59.97 });
+    expect(small.expected('sub')).toMatchObject({ path: 'sub', tainted: false, value: 59.97 });
     expect(small.expected('discounted').value).toBe('no');
 
     const big = await Mirror.start(pricing, noFetch);
@@ -96,6 +96,7 @@ describe('Mirror', () => {
     await missing.submit({ id: 'a b/c' });
     expect(missing.screen).toEqual({
       kind: 'error',
+      code: 'fetch-failed',
       reason: 'GET /api/things/a%20b%2Fc returned 404',
     });
     expect(requested).toEqual(['/api/things/ok', '/api/things/a%20b%2Fc']);
@@ -104,7 +105,11 @@ describe('Mirror', () => {
   it('predicts an error page when a UI step would show a missing value', async () => {
     const broken = workflow([{ id: 'show', block: 'details', fields: [{ path: 'nothing' }] }]);
     const mirror = await Mirror.start(broken, noFetch);
-    expect(mirror.screen).toEqual({ kind: 'error', reason: 'state has no value at "nothing"' });
+    expect(mirror.screen).toEqual({
+      kind: 'error',
+      code: 'missing-value',
+      reason: 'state has no value at "nothing"',
+    });
   });
 
   it('runs string and object blocks, and copies on write so values never alias', async () => {
@@ -142,7 +147,11 @@ describe('Mirror', () => {
       { id: 'show', block: 'details', fields: [{ path: 'x' }] },
     ]);
     const mirror = await Mirror.start(divide, noFetch);
-    expect(mirror.screen).toEqual({ kind: 'error', reason: 'step "d" divides by zero' });
+    expect(mirror.screen).toEqual({
+      kind: 'error',
+      code: 'divide-by-zero',
+      reason: 'step "d" divides by zero',
+    });
   });
 
   it('throws a harness error when asked for a value it never computed', async () => {

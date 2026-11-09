@@ -43,6 +43,27 @@ export async function discoverWorkflows(
   return workflows;
 }
 
+/**
+ * The AI_SEED the running app uses, from /healthz. Read from the app rather
+ * than the environment: the app picks a random seed when none is set, and a
+ * reused dev server may have been started with a different one.
+ */
+export async function readAiSeed(
+  baseURL: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<string> {
+  const url = `${baseURL}/healthz`;
+  const response = await fetchImpl(url);
+  if (!response.ok) throw new HarnessError(`GET ${url} returned ${String(response.status)}`);
+  const body: unknown = await response.json();
+  const seed =
+    typeof body === 'object' && body !== null && 'aiSeed' in body ? body.aiSeed : undefined;
+  if (typeof seed !== 'string' || seed === '') {
+    throw new HarnessError(`GET ${url} did not report an aiSeed`);
+  }
+  return seed;
+}
+
 /** Replays a fetch block's GET against the live mock API. */
 export function httpFetch(baseURL: string, fetchImpl: typeof fetch = fetch): MirrorFetch {
   return async (path) => {
