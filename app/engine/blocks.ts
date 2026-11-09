@@ -1,5 +1,5 @@
-import { randomInt } from 'node:crypto';
 import { contractViolations } from '../ai/contract.ts';
+import { seededRandom } from '../ai/random.ts';
 import { simulateModel } from '../ai/simulate.ts';
 import type { HeadlessStep } from './schema.ts';
 import {
@@ -199,17 +199,36 @@ function aiBlock(seed: string): Handler<'ai'> {
   };
 }
 
-const idBlock: Handler<'id'> = (step, { state }) => {
-  let id = step.prefix;
-  for (let i = 0; i < step.length; i++) id += step.alphabet.charAt(randomInt(step.alphabet.length));
-  return Promise.resolve({ state: setPath(state, step.into, id) });
-};
+/**
+ * IDs come from AI_SEED too, so a seed reproduces a run exactly, IDs
+ * included. They use their own stream ("id|…"), never the model's, and
+ * are keyed by the run's state rather than by call order, because parallel
+ * test runs make call order vary. Same seed and same run: same ID.
+ */
+function idBlock(seed: string): Handler<'id'> {
+  return (step, { state }) => {
+    const random = seededRandom(`id|${seed}|${step.id}|${JSON.stringify(state)}`);
+    let id = step.prefix;
+    for (let i = 0; i < step.length; i++) {
+      id += step.alphabet.charAt(Math.floor(random() * step.alphabet.length));
+    }
+    return Promise.resolve({ state: setPath(state, step.into, id) });
+  };
+}
 
 export interface BlockOptions {
-  /** Seeds the simulated model. See AI_SEED. */
+  /** Seeds the simulated model and generated IDs. See AI_SEED. */
   aiSeed: string;
 }
 
 export function createBlockHandlers({ aiSeed }: BlockOptions): BlockHandlers {
-  return { math, string, object, condition, fetch: fetchBlock, ai: aiBlock(aiSeed), id: idBlock };
+  return {
+    math,
+    string,
+    object,
+    condition,
+    fetch: fetchBlock,
+    ai: aiBlock(aiSeed),
+    id: idBlock(aiSeed),
+  };
 }
