@@ -6,7 +6,7 @@ import { expect, test } from '@playwright/test';
 
 test('health check answers and reports the AI seed in use', async ({ request }) => {
   const response = await request.get('/healthz');
-  expect(await response.json()).toEqual({ ok: true, aiSeed: expect.any(String) as unknown });
+  expect(await response.json()).toMatchObject({ ok: true, aiSeed: expect.any(String) });
 });
 
 test('lists published workflows with their steps', async ({ request }) => {

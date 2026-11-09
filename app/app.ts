@@ -12,6 +12,8 @@ export interface AppDeps {
   engine: Engine;
   /** Reported on /healthz so a test run can record which seed it ran against. */
   aiSeed: string;
+  /** The deliberate defect switched in, if any; reported on /healthz. */
+  engineBug?: string | null;
 }
 
 /** Urlencoded bodies arrive untyped; keep only string fields. */
@@ -22,7 +24,12 @@ function toStringRecord(body: unknown): Record<string, string> {
   );
 }
 
-export function createApp({ workflows, engine, aiSeed }: AppDeps): express.Express {
+export function createApp({
+  workflows,
+  engine,
+  aiSeed,
+  engineBug = null,
+}: AppDeps): express.Express {
   const app = express();
   // Runs live in memory: this is a demo app with no database (see SPEC.md).
   const runs = new Map<string, Run>();
@@ -31,7 +38,7 @@ export function createApp({ workflows, engine, aiSeed }: AppDeps): express.Expre
   app.use(express.urlencoded({ extended: false }));
 
   app.get('/healthz', (_req, res) => {
-    res.json({ ok: true, aiSeed });
+    res.json({ ok: true, aiSeed, engineBug });
   });
 
   app.get('/api/workflows', (_req, res) => {
