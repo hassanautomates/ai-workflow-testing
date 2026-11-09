@@ -28,6 +28,12 @@ describe('discoverWorkflows', () => {
     );
   });
 
+  it('skips an unpublished workflow even if the API lists it', async () => {
+    const draft = { ...published, id: 'draft', published: false };
+    const workflows = await discoverWorkflows('http://app', respond(200, [published, draft]));
+    expect(workflows.map((workflow) => workflow.id)).toEqual(['one']);
+  });
+
   it('fails when only unpublished workflows come back', async () => {
     const draft = { ...published, published: false };
     await expect(discoverWorkflows('http://app', respond(200, [draft]))).rejects.toThrow(
