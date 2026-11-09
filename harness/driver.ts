@@ -3,6 +3,7 @@ import { assertExact, assertShape } from './assertions.ts';
 import { HarnessError } from './errors.ts';
 import type { CoverageRecorder } from './manifest.ts';
 import { type Expected, Mirror, type MirrorFetch, type Screen, screenKey } from './mirror.ts';
+import type { Fixture } from './naive.ts';
 import type { Case, DetailsStep, FormStep, TableStep, Workflow } from './workflow.ts';
 
 // Drives one case of one workflow through the real UI, screen by screen,
@@ -25,18 +26,48 @@ interface Context {
   page: Page;
   mirror: Mirror;
   record: CoverageRecorder;
+  /** Only for the naive baseline (see naive.ts): recording, or enforcing, model output. */
+  fixture: Fixture | undefined;
+  /** The screen number being checked. */
+  seq: number;
 }
 
 function stepRoot(page: Page, stepId: string): Locator {
   return page.locator(attr('data-step-id', stepId));
 }
 
+/**
+ * Naive baseline only: the element shows exactly what it showed in the
+ * recording run. This is the fixture-based check taint tracking replaces.
+ */
+async function assertAsRecorded(ctx: Context, element: Locator, name: string): Promise<void> {
+  const recorded = ctx.fixture?.value(ctx.seq, name);
+  if (recorded === undefined) {
+    throw new HarnessError(`naive fixture has nothing for ${name} on screen ${String(ctx.seq)}`);
+  }
+  const absent = (await element.getAttribute('data-absent')) !== null;
+  const shown = absent ? null : ((await element.textContent()) ?? '');
+  expect(
+    shown,
+    `naive: ${name} should show what it showed with AI_SEED=${ctx.fixture?.recordedSeed ?? '?'}`,
+  ).toBe(recorded);
+}
+
 /** Exact for clean values, shape for tainted ones; recorded either way. */
 async function check(ctx: Context, root: Locator, expected: Expected): Promise<void> {
   const element = field(expected.path);
-  if (expected.tainted) {
+  if (expected.tainted && ctx.fixture?.mode === 'naive') {
+    ctx.record.asserted({
+      kind: 'exact',
+      element,
+      expected: ctx.fixture.value(ctx.seq, element),
+      origin: `naive fixture (AI_SEED=${ctx.fixture.recordedSeed})`,
+    });
+    await assertAsRecorded(ctx, root.locator(element), element);
+  } else if (expected.tainted) {
     ctx.record.asserted({ kind: 'shape', element, rule: expected.rule, origin: expected.origin });
     await assertShape(root.locator(element), expected);
+    ctx.fixture?.saveValue(ctx.seq, element, (await root.locator(element).textContent()) ?? '');
   } else {
     ctx.record.asserted({
       kind: 'exact',
@@ -115,8 +146,20 @@ async function checkDetails(ctx: Context, step: DetailsStep) {
       continue;
     }
     await expect(element, `"${shown.path}" should be on the page`).toBeAttached();
+    if (known.presence === 'maybe' && ctx.fixture?.mode === 'naive') {
+      // A fixture suite expects the optional field exactly as recorded, present or not.
+      ctx.record.asserted({
+        kind: 'exact',
+        element: field(shown.path),
+        expected: ctx.fixture.value(ctx.seq, field(shown.path)),
+        origin: `naive fixture (AI_SEED=${ctx.fixture.recordedSeed})`,
+      });
+      await assertAsRecorded(ctx, element, field(shown.path));
+      continue;
+    }
     const absent = (await element.getAttribute('data-absent')) !== null;
     if (absent && known.presence === 'maybe') {
+      ctx.fixture?.saveValue(ctx.seq, field(shown.path), null);
       // The model decides whether an optional field appears. This run it
       // didn't, so there is nothing to check; say so instead of passing quietly.
       ctx.record.gap(
@@ -183,13 +226,15 @@ export async function driveCase(
   testCase: Case,
   fetchJson: MirrorFetch,
   record: CoverageRecorder,
+  fixture?: Fixture,
 ): Promise<void> {
   const mirror = await Mirror.start(workflow, fetchJson);
-  const ctx: Context = { page, mirror, record };
+  const ctx: Context = { page, mirror, record, fixture, seq: 0 };
   const main = page.locator('main[data-workflow-id]');
   await page.goto(`/run/${encodeURIComponent(workflow.id)}`);
 
   for (let seq = 1; seq <= MAX_SCREENS; seq++) {
+    ctx.seq = seq;
     // Wait for the app's own signal that the next screen is up, rather than
     // for a particular step: with observed routing we don't know which yet.
     await expect(main, `waiting for screen ${String(seq)}`).toHaveAttribute(
@@ -208,6 +253,14 @@ export async function driveCase(
       expect(observedFrom, `app rendered "${rendered}"; the workflow only allows these`).toContain(
         rendered,
       );
+      if (fixture?.mode === 'naive') {
+        // A fixture suite pins the route it was recorded with.
+        expect(
+          rendered,
+          `naive: route should match the one recorded with AI_SEED=${fixture.recordedSeed}`,
+        ).toBe(fixture.route(seq));
+      }
+      fixture?.saveRoute(seq, rendered);
       mirror.observe(rendered);
       test.info().annotations.push({
         type: 'observed-route',

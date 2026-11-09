@@ -43,25 +43,31 @@ export async function discoverWorkflows(
   return workflows;
 }
 
+export interface ServerInfo {
+  aiSeed: string;
+  /** The deliberate defect the app is running with, if any. */
+  engineBug: string | null;
+}
+
 /**
- * The AI_SEED the running app uses, from /healthz. Read from the app rather
- * than the environment: the app picks a random seed when none is set, and a
- * reused dev server may have been started with a different one.
+ * The AI_SEED (and ENGINE_BUG, if any) the running app uses, from /healthz.
+ * Read from the app rather than the environment: the app picks a random seed
+ * when none is set, and a reused dev server may have been started differently.
  */
-export async function readAiSeed(
+export async function readServerInfo(
   baseURL: string,
   fetchImpl: typeof fetch = fetch,
-): Promise<string> {
+): Promise<ServerInfo> {
   const url = `${baseURL}/healthz`;
   const response = await fetchImpl(url);
   if (!response.ok) throw new HarnessError(`GET ${url} returned ${String(response.status)}`);
   const body: unknown = await response.json();
-  const seed =
-    typeof body === 'object' && body !== null && 'aiSeed' in body ? body.aiSeed : undefined;
-  if (typeof seed !== 'string' || seed === '') {
+  const info = typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {};
+  if (typeof info.aiSeed !== 'string' || info.aiSeed === '') {
     throw new HarnessError(`GET ${url} did not report an aiSeed`);
   }
-  return seed;
+  const engineBug = typeof info.engineBug === 'string' ? info.engineBug : null;
+  return { aiSeed: info.aiSeed, engineBug };
 }
 
 /** Replays a fetch block's GET against the live mock API. */
