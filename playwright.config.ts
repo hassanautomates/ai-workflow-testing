@@ -6,6 +6,9 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   // Flakiness gets fixed at the cause, never hidden by retries (see CLAUDE.md).
   retries: 0,
+  // Coverage manifests: cleared before the run, summarised after it.
+  globalSetup: './tests/e2e/global-setup.ts',
+  globalTeardown: './tests/e2e/global-teardown.ts',
   reporter: [['list'], ['html', { open: 'never' }]],
   use: {
     baseURL,

@@ -65,6 +65,9 @@ export interface Expected {
   readonly origin: string;
 }
 
+export type OptionalExpected =
+  { presence: 'absent' } | { presence: 'present' | 'maybe'; expected: Expected };
+
 export interface FetchResult {
   status: number;
   body: unknown;
@@ -428,6 +431,19 @@ export class Mirror {
     return match.screen;
   }
 
+  /**
+   * For a value displayed as optional: whether it should be there at all.
+   * "maybe" means it is an optional model field: the model decides, so the
+   * mirror can't.
+   */
+  presence(path: string): OptionalExpected {
+    const found = lookup(this.only().state, path);
+    if (!found.found) return { presence: 'absent' };
+    const expected = this.expected(path);
+    const optional = found.value instanceof Tainted && !found.value.rule.required;
+    return { presence: optional ? 'maybe' : 'present', expected };
+  }
+
   /** What the app should show for `path` on the current screen. */
   expected(path: string): Expected {
     const found = lookup(this.only().state, path);
@@ -610,7 +626,8 @@ export class Mirror {
   /** The app refuses to render a UI step whose values are missing; so must the mirror. */
   private checkRenderable(state: MirrorState, step: UiStep): void {
     if (step.block === 'details') {
-      for (const field of step.fields) readOrPredictError(state, field.path);
+      // An optional field may be missing; the app then shows it as absent.
+      for (const field of step.fields) if (!field.optional) readOrPredictError(state, field.path);
     }
     if (step.block === 'table') {
       const rows = readOrPredictError(state, step.rows);
@@ -847,16 +864,51 @@ export class Mirror {
       }
 
       case 'ai': {
-        const input = value(step.input);
-        if (input instanceof Tainted) requireTaintedType(step, input, 'string');
-        else asString(step, input);
         // Unmirrored: each field is known only by its declared contract. The
-        // object itself is plain, so taint stays on the fields.
-        const output: Record<string, unknown> = {};
-        for (const [field, rule] of Object.entries(step.output)) {
-          output[field] = new Tainted(rule, `ai "${step.id}" → ${field}`);
+        // answer object itself is plain, so taint stays on the fields.
+        const answer = (where: string) => {
+          const output: Record<string, unknown> = {};
+          for (const [field, rule] of Object.entries(step.output)) {
+            output[field] = new Tainted(rule, `ai "${step.id}"${where} → ${field}`);
+          }
+          return output;
+        };
+        const checkInput = (input: unknown) => {
+          if (input instanceof Tainted) requireTaintedType(step, input, 'string');
+          else asString(step, input);
+        };
+
+        if (step.each === undefined) {
+          checkInput(value(step.input));
+          assign(state, step.into, answer(''));
+          return;
         }
-        assign(state, step.into, output);
+        // One call per row. The rows themselves stay as they were (fetched
+        // rows stay clean); only the field each answer lands in is tainted.
+        const rows = readOrPredictError(state, step.each.rows);
+        if (rows instanceof Tainted) {
+          assign(
+            state,
+            step.each.rows,
+            new Tainted({ type: 'any', required: true }, `rows labelled by ai "${step.id}"`),
+          );
+          return;
+        }
+        if (!Array.isArray(rows)) {
+          throw new PredictedRunError(
+            'wrong-type',
+            `step "${step.id}": "${step.each.rows}" is not a list`,
+          );
+        }
+        for (let i = 0; i < rows.length; i++) {
+          const rowPath = `${step.each.rows}.${String(i)}`;
+          const row = readOrPredictError(state, rowPath);
+          if (!isRecord(row) && !(row instanceof Tainted)) {
+            throw new PredictedRunError('wrong-type', `step "${step.id}" expected an object`);
+          }
+          checkInput(readOrPredictError(state, `${rowPath}.${step.each.input}`));
+          assign(state, `${rowPath}.${step.into}`, answer(` row ${String(i)}`));
+        }
         return;
       }
 

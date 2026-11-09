@@ -1,6 +1,7 @@
 import { test } from '@playwright/test';
 import { discoverWorkflows, httpFetch, readAiSeed } from '../../harness/discover.ts';
 import { driveCase } from '../../harness/driver.ts';
+import { CoverageRecorder } from '../../harness/manifest.ts';
 import { baseURL } from './base-url.ts';
 
 // One test per published workflow per input case, generated from the live
@@ -25,8 +26,17 @@ test.beforeEach(async ({}, testInfo) => {
 for (const workflow of workflows) {
   test.describe(workflow.id, () => {
     for (const testCase of workflow.cases) {
-      test(testCase.name, async ({ page }) => {
-        await driveCase(page, workflow, testCase, httpFetch(baseURL));
+      test(testCase.name, async ({ page }, testInfo) => {
+        const record = new CoverageRecorder(workflow.id, testCase.name, aiSeed);
+        let result: 'passed' | 'failed' = 'failed';
+        try {
+          await driveCase(page, workflow, testCase, httpFetch(baseURL), record);
+          result = 'passed';
+        } finally {
+          // Written for failures too: the manifest shows how far the case got.
+          const path = await record.write(result);
+          await testInfo.attach('coverage-manifest', { path, contentType: 'application/json' });
+        }
       });
     }
   });

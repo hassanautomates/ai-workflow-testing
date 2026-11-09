@@ -41,10 +41,13 @@ export type FetchStep = StepCommon & { block: 'fetch'; path: string; into: strin
 /** Unmirrored: the mirror only knows its output contract, one rule per field. */
 export type AiStep = StepCommon & {
   block: 'ai';
-  input: Operand;
   output: Record<string, ShapeRule>;
   into: string;
-};
+} & (
+    | { input: Operand; each?: undefined }
+    /** One model call per row; each answer lands at `into` inside its row. */
+    | { input?: undefined; each: { rows: string; input: string } }
+  );
 /** Unmirrored: a random ID, known only by its format. */
 export type IdStep = StepCommon & {
   block: 'id';
@@ -60,7 +63,11 @@ export interface FormField {
   required: boolean;
 }
 export type FormStep = StepCommon & { block: 'form'; fields: FormField[] };
-export type DetailsStep = StepCommon & { block: 'details'; fields: { path: string }[] };
+export type DetailsStep = StepCommon & {
+  block: 'details';
+  /** `optional`: the value may be missing; the app then marks the element data-absent. */
+  fields: { path: string; optional: boolean }[];
+};
 export type TableStep = StepCommon & { block: 'table'; rows: string; columns: { key: string }[] };
 
 export type HeadlessStep =
@@ -268,13 +275,21 @@ function parseStep(raw: unknown, where: string): Step {
       for (const [field, rule] of Object.entries(record(source.output, `${at}.output`))) {
         output[field] = parseOutputRule(rule, `${at}.output.${field}`);
       }
-      return {
-        ...common,
-        block,
-        input: operand(source.input, `${at}.input`),
-        output,
-        into: text(source, 'into', at),
-      };
+      const into = text(source, 'into', at);
+      if (source.each !== undefined) {
+        const each = record(source.each, `${at}.each`);
+        return {
+          ...common,
+          block,
+          each: {
+            rows: text(each, 'rows', `${at}.each`),
+            input: text(each, 'input', `${at}.each`),
+          },
+          output,
+          into,
+        };
+      }
+      return { ...common, block, input: operand(source.input, `${at}.input`), output, into };
     }
     case 'id': {
       const length = source.length;
@@ -313,13 +328,13 @@ function parseStep(raw: unknown, where: string): Step {
       return {
         ...common,
         block,
-        fields: list(source, 'fields', at).map((rawField, i) => ({
-          path: text(
-            record(rawField, `${at}.fields[${String(i)}]`),
-            'path',
-            `${at}.fields[${String(i)}]`,
-          ),
-        })),
+        fields: list(source, 'fields', at).map((rawField, i) => {
+          const field = record(rawField, `${at}.fields[${String(i)}]`);
+          return {
+            path: text(field, 'path', `${at}.fields[${String(i)}]`),
+            optional: field.optional === true,
+          };
+        }),
       };
     case 'table':
       return {

@@ -284,3 +284,77 @@ describe('observed routing', () => {
     expect(mirror.expected('text').tainted).toBe(false);
   });
 });
+
+describe('model-labelled rows', () => {
+  const rows: MirrorFetch = () =>
+    Promise.resolve({
+      status: 200,
+      body: [
+        { id: 'r1', item: 'Lamp' },
+        { id: 'r2', item: 'Desk' },
+      ],
+    });
+  const labelled = [
+    textForm,
+    { id: 'load', block: 'fetch', path: '/api/rows', into: 'rows' },
+    {
+      id: 'label',
+      block: 'ai',
+      prompt: 'Label',
+      each: { rows: 'rows', input: 'item' },
+      output: { category: { type: 'string', allowed: ['home', 'office'] } },
+      into: 'tag',
+    },
+    { id: 'show', block: 'table', rows: 'rows', columns: [{ key: 'id' }, { key: 'tag.category' }] },
+  ];
+
+  it('keeps fetched cells clean and taints only the model-written cell in each row', async () => {
+    const mirror = await mirrorAfterForm(labelled, rows);
+    expect(mirror.rowCount('rows')).toBe(2);
+    for (const i of [0, 1]) {
+      expect(mirror.expected(`rows.${String(i)}.id`).tainted).toBe(false);
+      expect(mirror.expected(`rows.${String(i)}.item`).tainted).toBe(false);
+      expect(mirror.expected(`rows.${String(i)}.tag.category`)).toMatchObject({
+        tainted: true,
+        rule: { allowed: ['home', 'office'] },
+        origin: `ai "label" row ${String(i)} → category`,
+      });
+    }
+  });
+
+  it('predicts the app failing when a row lacks the input field', async () => {
+    const broken: MirrorFetch = () => Promise.resolve({ status: 200, body: [{ id: 'r1' }] });
+    const mirror = await mirrorAfterForm(labelled, broken);
+    expect(mirror.screen).toMatchObject({ kind: 'error', code: 'missing-value' });
+  });
+});
+
+describe('optional values', () => {
+  const optional = [
+    textForm,
+    extract,
+    {
+      id: 'show',
+      block: 'details',
+      fields: [
+        { path: 'ai.note', optional: true },
+        { path: 'never.set', optional: true },
+        { path: 'text', optional: true },
+      ],
+    },
+  ];
+
+  it('says whether an optional value is there, missing, or up to the model', async () => {
+    const mirror = await mirrorAfterForm(optional);
+    expect(mirror.screen).toMatchObject({ kind: 'step', step: { id: 'show' } });
+    expect(mirror.presence('ai.note')).toMatchObject({
+      presence: 'maybe',
+      expected: { tainted: true },
+    });
+    expect(mirror.presence('never.set')).toEqual({ presence: 'absent' });
+    expect(mirror.presence('text')).toMatchObject({
+      presence: 'present',
+      expected: { tainted: false },
+    });
+  });
+});
