@@ -8,6 +8,7 @@ Read `SPEC.md` first. It defines what this repo is. This file defines how to wor
 - **No secrets, no external services.** The suite must run offline apart from `npm ci` and the Playwright browser download.
 - **Work milestone by milestone** (SPEC.md § Milestones). Stop at the end of each milestone, summarise what changed and what's next, and wait for the go-ahead. Don't start the next milestone unprompted.
 - **Small commits with clear messages.** The commit history is part of the portfolio. Do not commit or push unless asked; propose the commit message instead.
+- In commit messages and PR descriptions, never add Co-Authored-By lines or any signature or attribution to Claude.
 
 ## Code standards
 - TypeScript `strict: true`. No `any` unless commented with a reason.
